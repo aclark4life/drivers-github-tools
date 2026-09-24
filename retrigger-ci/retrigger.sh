@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Re-trigger the downstream repository's CI, one of three ways. parse_inputs.sh
-# has already validated everything, so each kind here can assume its fields are
-# present and well formed.
+# validated the inputs, so each kind can assume its fields are well formed.
 #
 # Required environment: GH_TOKEN, GH_REPO, KIND, PR, REF, WORKFLOW_PATTERN,
 # EVERGREEN_COMMENT, DRY_RUN.
@@ -12,7 +11,6 @@ fail() {
   exit 1
 }
 
-# Run gh unless this is a dry run, in which case log the call and do nothing.
 # Every mutating command goes through this, so a dry run cannot re-trigger
 # anything even if a new kind is added later.
 run_gh() {
@@ -23,9 +21,8 @@ run_gh() {
   fi
 }
 
-# WORKFLOW_PATTERN is a glob, which is what a workflow file name reads like, but
-# jq only matches regexes. Escape everything with meaning in a regex, then let
-# '*' through as '.*'.
+# WORKFLOW_PATTERN is a glob, but jq matches regexes. Escape what has meaning
+# in a regex, then let '*' through as '.*'.
 pattern_to_regex() {
   local escaped
   escaped=$(printf '%s' "$1" | sed -e 's/[.[\]$()|+?{}^\\]/\\&/g' -e 's/\*/.*/g')
@@ -34,9 +31,8 @@ pattern_to_regex() {
 
 case "$KIND" in
   evergreen)
-    # Evergreen only re-runs a patch for an open pull request. On a closed or
-    # merged one the comment posts and nothing happens, which looks like
-    # success, so refuse instead.
+    # Evergreen only retries an open pull request. Elsewhere the comment posts
+    # and nothing happens, which looks like success, so refuse instead.
     STATE=$(gh pr view "$PR" --json state --jq .state)
     if [ "$STATE" != "OPEN" ]; then
       fail "${GH_REPO}#${PR} is ${STATE}, not open; Evergreen will not re-run its patch. Point ci_rerun at an open pull request, or switch it to another kind."
@@ -48,21 +44,18 @@ case "$KIND" in
   pr)
     HEAD_SHA=$(gh pr view "$PR" --json headRefOid --jq .headRefOid)
     REGEX=$(pattern_to_regex "$WORKFLOW_PATTERN")
-    # Match on the file name rather than the workflow's display name, because
-    # the pattern names files and a display name can be anything.
+    # Match the file name, not the display name, which can be anything.
     #
-    # Only completed runs: gh refuses to re-run one that is still going, and a
-    # run already in flight on this commit needs no help. Re-running re-reads
-    # the workflow and re-runs its checkouts, so the run picks up the new
-    # upstream commits on the fork branch.
+    # Completed runs only: gh refuses to re-run one still going, and a run in
+    # flight needs no help. A re-run redoes its checkouts, so it picks up the
+    # new upstream commits.
     RUN_IDS=$(gh run list --commit "$HEAD_SHA" --status completed --limit 100 \
       --json databaseId,path \
       --jq "map(select((.path | split(\"/\") | last) | test(\"${REGEX}\"))) | .[].databaseId")
     if [ -z "$RUN_IDS" ]; then
-      # Most likely the runs aged out of retention, or the pattern matches
-      # nothing. Either way the downstream repository is not being tested
-      # against the new commits, which is exactly what this action exists to
-      # prevent, so say so loudly rather than exiting clean.
+      # The runs aged out of retention, or the pattern matches nothing. Either
+      # way the downstream repository is untested against the new commits,
+      # which is what this action prevents, so fail rather than exit clean.
       fail "No completed runs matching '${WORKFLOW_PATTERN}' found on ${GH_REPO}@${HEAD_SHA}. Nothing was re-triggered. Re-run them by hand, or use the 'ref' kind to dispatch the workflows instead."
     fi
     while read -r RUN_ID; do
@@ -74,9 +67,8 @@ case "$KIND" in
 
   ref)
     REGEX=$(pattern_to_regex "$WORKFLOW_PATTERN")
-    # Dispatch by file name, which is stable, rather than by the run's display
-    # name. Disabled workflows are skipped: gh errors on them, and a workflow
-    # someone disabled on purpose should stay that way.
+    # Dispatch by file name, which is stable. Skip disabled workflows: gh
+    # errors on them, and one disabled on purpose should stay off.
     WORKFLOWS=$(gh workflow list --all --limit 100 --json path,state \
       --jq "map(select(.state == \"active\")) | map(select((.path | split(\"/\") | last) | test(\"${REGEX}\"))) | .[].path")
     if [ -z "$WORKFLOWS" ]; then
@@ -84,15 +76,14 @@ case "$KIND" in
     fi
     while read -r WORKFLOW; do
       [ -n "$WORKFLOW" ] || continue
-      # Needs workflow_dispatch on the workflow and the ref to exist downstream.
+      # Needs workflow_dispatch on the workflow and the ref to exist.
       run_gh workflow run "$(basename "$WORKFLOW")" --ref "$REF"
       echo "Dispatched $(basename "$WORKFLOW") on ${GH_REPO}@${REF}."
     done <<< "$WORKFLOWS"
     ;;
 
   *)
-    # parse_inputs.sh rejects anything else, so reaching here means the two got
-    # out of step.
+    # parse_inputs.sh rejects anything else, so the two got out of step.
     fail "unhandled ci_rerun kind '${KIND}'"
     ;;
 esac

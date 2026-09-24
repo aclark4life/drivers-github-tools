@@ -8,26 +8,25 @@ inputs:
     required: true
   ci_rerun:
     description: >-
-      JSON object describing how to re-trigger, {"kind": ...}. Three kinds are
-      supported: {"kind":"evergreen","pr":N} posts an Evergreen retry comment on
-      pull request N; {"kind":"pr","pr":N} re-queues the matching GitHub Actions
-      runs on pull request N's head commit; {"kind":"ref","ref":"branch"}
-      dispatches the matching workflows on a branch or tag.
+      How to re-trigger. {"kind":"evergreen","pr":N} comments on pull request
+      N to make Evergreen retry. {"kind":"pr","pr":N} re-queues the matching
+      runs on N's head commit. {"kind":"ref","ref":"branch"} dispatches the
+      matching workflows on a branch or tag.
     required: true
   app_id:
     description: >-
-      ID of a GitHub App installed on the downstream repository. The action
-      mints the downstream-scoped token itself, so callers never handle a raw
-      cross-repository token.
+      ID of a GitHub App installed on the downstream repository. This action
+      mints the scoped token itself, so callers never handle a cross-repository
+      token.
     required: true
   private_key:
     description: The private key of the GitHub App
     required: true
   workflow_pattern:
     description: >-
-      Glob matched against workflow file names to decide which workflows the
-      'pr' and 'ref' kinds act on. Scoping this matters: without it, the 'pr'
-      kind would re-queue every run on the commit, including release workflows.
+      Glob matched against workflow file names, choosing what the 'pr' and
+      'ref' kinds act on. Unscoped, the 'pr' kind would re-queue every run on
+      the commit, including release workflows.
     default: test-python*
   evergreen_comment:
     description: The comment body that nudges Evergreen to re-run its patch
@@ -39,8 +38,8 @@ inputs:
 runs:
   using: composite
   steps:
-    # Validate and split before minting anything, so a malformed repo or a typo
-    # in the ci_rerun kind fails without a token ever being issued.
+    # Runs first, so a malformed repo or an unknown kind fails before a token
+    # is issued.
     - name: Parse the inputs
       id: parse
       shell: bash
@@ -49,8 +48,8 @@ runs:
         CI_RERUN: ${{ inputs.ci_rerun }}
       run: ${{ github.action_path }}/parse_inputs.sh
 
-    # Scoped to the downstream repository, and to only the permissions the
-    # chosen kind needs. An empty value is not requested at all.
+    # Scoped to the downstream repository and to what the kind needs. An empty
+    # permission is not requested at all.
     - name: Generate a downstream-scoped app token
       id: app-token
       uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
@@ -68,8 +67,8 @@ runs:
       shell: bash
       env:
         GH_TOKEN: ${{ steps.app-token.outputs.token }}
-        # Target the repository explicitly rather than letting gh infer it from
-        # the git remote, so this works with no checkout at all.
+        # Explicit, rather than inferred from a git remote, so this needs no
+        # checkout.
         GH_REPO: ${{ inputs.repo }}
         KIND: ${{ steps.parse.outputs.kind }}
         PR: ${{ steps.parse.outputs.pr }}

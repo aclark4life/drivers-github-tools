@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Validate the action's inputs and split them into individual outputs, so the
-# token minted next is scoped to exactly one repository and the permissions the
-# chosen kind needs.
+# Validate the inputs and split them into outputs, so the token minted next is
+# scoped to one repository and to what the kind needs.
 #
 # Required environment: REPO, CI_RERUN, and GITHUB_OUTPUT from the Actions
 # runtime.
@@ -12,9 +11,8 @@ fail() {
   exit 1
 }
 
-# create-github-app-token takes the owner and the bare repository name
-# separately, so a value that is not exactly owner/name would silently scope the
-# token somewhere unintended.
+# create-github-app-token takes the owner and the name separately, so anything
+# other than owner/name would scope the token somewhere unintended.
 case "$REPO" in
   */*/*|/*|*/) fail "repo must be owner/name, got '${REPO}'" ;;
   */*) ;;
@@ -33,9 +31,8 @@ REF=$(echo "$CI_RERUN" | jq -r '.ref // empty')
 
 case "$KIND" in
   evergreen|pr)
-    # An unknown kind, or a kind missing the field it acts on, is a typo in the
-    # caller's configuration. Fail rather than no-op, or the mistake is silent
-    # and the downstream repository is never re-triggered.
+    # A kind missing the field it acts on is a typo. Fail rather than no-op,
+    # or the downstream repository is never re-triggered and nobody knows.
     [ -n "$PR" ] || fail "ci_rerun kind '${KIND}' requires a 'pr' number"
     case "$PR" in
       ''|*[!0-9]*) fail "ci_rerun 'pr' must be a number, got '${PR}'" ;;
@@ -43,8 +40,8 @@ case "$KIND" in
     ;;
   ref)
     [ -n "$REF" ] || fail "ci_rerun kind 'ref' requires a 'ref'"
-    # workflow_dispatch only accepts a branch or a tag. GitHub rejects a SHA
-    # with an opaque "No ref found" error, so catch the likely mistake here.
+    # workflow_dispatch takes a branch or tag. GitHub rejects a SHA with an
+    # opaque "No ref found", so catch that here.
     if printf '%s' "$REF" | grep -Eq '^[0-9a-f]{7,40}$'; then
       fail "ci_rerun 'ref' must be a branch or tag, not a commit SHA, got '${REF}'"
     fi

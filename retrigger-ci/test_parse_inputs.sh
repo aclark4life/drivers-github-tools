@@ -42,8 +42,8 @@ run_script() {
 outputs() { cat "$TMPDIR/output"; }
 log() { cat "$TMPDIR/log"; }
 
-# The happy paths: each kind produces the owner/name split the token step needs
-# plus its own field, and leaves the other kinds' fields empty.
+# Each kind produces the owner/name split the token step needs plus its own
+# field, and leaves the other kinds' fields empty.
 run_script "mongodb/django-mongodb-backend" '{"kind":"evergreen","pr":422}'
 check "evergreen: succeeds" "0" "$STATUS"
 check "evergreen: outputs" \
@@ -65,8 +65,8 @@ check_contains "ref: kind is passed through" "kind=ref" "$(outputs)"
 check_contains "ref: ref is passed through" "ref=main" "$(outputs)"
 check_contains "ref: pr is empty" "pr=" "$(outputs)"
 
-# A repo that is not exactly owner/name would scope the minted token somewhere
-# unintended, so every malformed shape is rejected.
+# Anything other than owner/name would scope the minted token somewhere
+# unintended.
 for BAD_REPO in "django-mongodb-backend" "mongodb/labs/backend" "/backend" "mongodb/" ""; do
   run_script "$BAD_REPO" '{"kind":"ref","ref":"main"}'
   check "repo '${BAD_REPO}' is rejected" "1" "$STATUS"
@@ -108,8 +108,8 @@ run_script "mongodb/backend" '{"kind":"pr","pr":"main"}'
 check "non-numeric pr is rejected" "1" "$STATUS"
 check_contains "non-numeric pr names the problem" "'pr' must be a number" "$(log)"
 
-# workflow_dispatch takes a branch or tag only; a SHA fails downstream with an
-# opaque error, so it is caught here instead.
+# workflow_dispatch takes a branch or tag. A SHA fails downstream with an
+# opaque error, so catch it here.
 run_script "mongodb/backend" '{"kind":"ref","ref":"a4787d0a0bdcdff18333a0204135fa2a6283a19d"}'
 check "a full SHA ref is rejected" "1" "$STATUS"
 check_contains "a full SHA ref explains why" "not a commit SHA" "$(log)"
@@ -117,8 +117,7 @@ check_contains "a full SHA ref explains why" "not a commit SHA" "$(log)"
 run_script "mongodb/backend" '{"kind":"ref","ref":"a4787d0"}'
 check "a short SHA ref is rejected" "1" "$STATUS"
 
-# Branch names that only look SHA-like must still be allowed, or a real branch
-# becomes unusable.
+# A branch that only looks SHA-like must still be allowed.
 run_script "mongodb/backend" '{"kind":"ref","ref":"6.0.x"}'
 check "a dotted branch name is accepted" "0" "$STATUS"
 check_contains "a dotted branch name is passed through" "ref=6.0.x" "$(outputs)"

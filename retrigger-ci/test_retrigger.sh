@@ -30,9 +30,9 @@ check_contains() {
   fi
 }
 
-# A fake gh that answers the three read queries from canned files and logs every
-# call. The read queries apply the caller's own --jq to the canned JSON, so the
-# real filters are exercised rather than a copy of them that could drift.
+# A fake gh that answers the read queries from canned files and logs every
+# call. It applies the caller's own --jq to the canned JSON, so the real
+# filters are exercised rather than copies that could drift.
 FAKE_GH="$TMPDIR/gh"
 cat > "$FAKE_GH" <<FAKE_GH_EOF
 #!/usr/bin/env bash
@@ -87,9 +87,8 @@ KIND=evergreen PR=422 REF='' EVERGREEN_COMMENT="evergreen retry --ui" run_script
 check "evergreen: the comment body is configurable" \
   "pr comment 422 --body evergreen retry --ui" "$(gh_call 'pr comment')"
 
-# Evergreen ignores a retry comment on a closed or merged PR, so the comment
-# would post and nothing would happen. That silent success is the whole failure
-# mode this ticket exists to avoid.
+# Evergreen ignores a retry comment on a closed or merged PR, so it would post
+# and nothing would happen. That silent success is the failure mode to avoid.
 echo '{"state":"CLOSED","headRefOid":"a4787d0"}' > "$TMPDIR/pr_view.json"
 KIND=evergreen PR=422 REF='' EVERGREEN_COMMENT='' run_script
 check "evergreen: a closed PR fails" "1" "$STATUS"
@@ -126,13 +125,13 @@ check "pr: runs are looked up on the PR head commit" \
 check "pr: only the matching runs are re-queued" \
   "run rerun 1
 run rerun 2" "$(gh_call 'run rerun')"
-# release-python.yml starts with "release", not "test-python", and re-running it
-# would publish. codeql.yml matches nothing. Both must be left alone.
+# Re-running release-python.yml would publish, and codeql.yml matches nothing.
+# Both must be left alone.
 check "pr: the release workflow is not re-queued" "" "$(gh_call 'run rerun 3')"
 check "pr: an unrelated workflow is not re-queued" "" "$(gh_call 'run rerun 4')"
 
-# The pattern is a glob over file names, not a substring match, so a workflow
-# whose name merely contains the pattern must not match.
+# The pattern is anchored, not a substring match, so a name that merely
+# contains it must not match.
 cat > "$TMPDIR/run_list.json" <<'JSON'
 [
   {"databaseId": 5, "path": ".github/workflows/nightly-test-python.yml"},
@@ -154,8 +153,8 @@ WORKFLOW_PATTERN="test-python.yml" KIND=pr PR=422 REF='' run_script
 check "pr: a dot in the pattern is literal" \
   "run rerun 7" "$(gh_call 'run rerun')"
 
-# No matching run means the downstream repository is not being tested against
-# the new commits, which is exactly the situation this action prevents.
+# No matching run means the downstream repository is untested against the new
+# commits, which is what this action prevents.
 echo '[]' > "$TMPDIR/run_list.json"
 unset WORKFLOW_PATTERN
 KIND=pr PR=422 REF='' run_script
@@ -212,8 +211,8 @@ check_contains "ref + dry run: the intended call is logged" \
 
 echo "--- unhandled kind"
 
-# parse_inputs.sh rejects this first, so reaching it means the two got out of
-# step. It must not exit clean and report a re-trigger that never happened.
+# parse_inputs.sh rejects this first, so the two got out of step. It must not
+# exit clean and report a re-trigger that never happened.
 unset DRY_RUN
 KIND=bogus PR='' REF='' run_script
 check "an unhandled kind fails" "1" "$STATUS"
