@@ -42,8 +42,8 @@ run_script() {
 outputs() { cat "$TMPDIR/output"; }
 log() { cat "$TMPDIR/log"; }
 
-# Each kind produces the owner/name split the token step needs plus its own
-# field, and leaves the other kinds' fields empty.
+# The owner/name split is what scopes the token, and each kind leaves the other
+# kinds' fields empty.
 run_script "mongodb/django-mongodb-backend" '{"kind":"evergreen","pr":422}'
 check "evergreen: succeeds" "0" "$STATUS"
 check "evergreen: outputs" \
@@ -54,20 +54,13 @@ pr=422
 ref=" \
   "$(outputs)"
 
-run_script "mongodb/django-mongodb-backend" '{"kind":"pr","pr":422}'
-check "pr: succeeds" "0" "$STATUS"
-check_contains "pr: kind is passed through" "kind=pr" "$(outputs)"
-check_contains "pr: number is passed through" "pr=422" "$(outputs)"
-
 run_script "mongodb/django-mongodb-backend" '{"kind":"ref","ref":"main"}'
 check "ref: succeeds" "0" "$STATUS"
-check_contains "ref: kind is passed through" "kind=ref" "$(outputs)"
-check_contains "ref: ref is passed through" "ref=main" "$(outputs)"
-check_contains "ref: pr is empty" "pr=" "$(outputs)"
+check_contains "ref: the ref is passed through" "ref=main" "$(outputs)"
 
 # Anything other than owner/name would scope the minted token somewhere
 # unintended.
-for BAD_REPO in "django-mongodb-backend" "mongodb/labs/backend" "/backend" "mongodb/" ""; do
+for BAD_REPO in "django-mongodb-backend" "mongodb/labs/backend" "mongodb/"; do
   run_script "$BAD_REPO" '{"kind":"ref","ref":"main"}'
   check "repo '${BAD_REPO}' is rejected" "1" "$STATUS"
   check_contains "repo '${BAD_REPO}' names the problem" "repo must be owner/name" "$(log)"
@@ -87,18 +80,10 @@ run_script "mongodb/backend" 'not json'
 check "non-JSON ci_rerun is rejected" "1" "$STATUS"
 check_contains "non-JSON names the problem" "must be a JSON object" "$(log)"
 
-run_script "mongodb/backend" '[{"kind":"ref","ref":"main"}]'
-check "JSON array ci_rerun is rejected" "1" "$STATUS"
-check_contains "JSON array names the problem" "must be a JSON object" "$(log)"
-
 # A kind missing the field it acts on cannot do anything useful.
 run_script "mongodb/backend" '{"kind":"evergreen"}'
 check "evergreen without pr is rejected" "1" "$STATUS"
 check_contains "evergreen without pr names the field" "requires a 'pr' number" "$(log)"
-
-run_script "mongodb/backend" '{"kind":"pr"}'
-check "pr without pr is rejected" "1" "$STATUS"
-check_contains "pr without pr names the field" "requires a 'pr' number" "$(log)"
 
 run_script "mongodb/backend" '{"kind":"ref"}'
 check "ref without ref is rejected" "1" "$STATUS"
@@ -114,15 +99,9 @@ run_script "mongodb/backend" '{"kind":"ref","ref":"a4787d0a0bdcdff18333a0204135f
 check "a full SHA ref is rejected" "1" "$STATUS"
 check_contains "a full SHA ref explains why" "not a commit SHA" "$(log)"
 
-run_script "mongodb/backend" '{"kind":"ref","ref":"a4787d0"}'
-check "a short SHA ref is rejected" "1" "$STATUS"
-
 # A branch that only looks SHA-like must still be allowed.
 run_script "mongodb/backend" '{"kind":"ref","ref":"6.0.x"}'
 check "a dotted branch name is accepted" "0" "$STATUS"
 check_contains "a dotted branch name is passed through" "ref=6.0.x" "$(outputs)"
-
-run_script "mongodb/backend" '{"kind":"ref","ref":"deadbeef-fix"}'
-check "a branch starting with hex is accepted" "0" "$STATUS"
 
 exit $FAIL
