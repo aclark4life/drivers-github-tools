@@ -1,0 +1,274 @@
+"""Tests for retrigger_ci.
+
+Run with `python3 -m pytest retrigger-ci/test_retrigger_ci.py`.
+"""
+
+from __future__ import annotations
+
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).parent))
+
+import retrigger_ci as rc  # noqa: E402
+
+BACKEND = "mongodb/django-mongodb-backend"
+
+
+# --- the ci_rerun mapping -------------------------------------------------
+# The value's type selects the behaviour, so these cover the shapes that
+# appear in dbx's config. A mapping must parse there and here identically, or
+# copying one across silently re-triggers the wrong thing.
+
+
+def parse(value):
+    return rc.parse_ci_rerun(json.dumps({BACKEND: value}))[BACKEND]
+
+
+def test_string_is_a_ref():
+    assert parse("main") == {"refs": ["main"], "prs": [], "evergreen_prs": []}
+
+
+def test_integer_is_a_pr():
+    assert parse(607) == {"refs": [], "prs": [607], "evergreen_prs": []}
+
+
+def test_evergreen_object_also_reruns_the_prs_actions():
+    """The flag adds Evergreen, it does not replace the Actions re-run."""
+    assert parse({"pr": 607, "evergreen": True}) == {
+        "refs": [],
+        "prs": [607],
+        "evergreen_prs": [607],
+    }
+
+
+def test_evergreen_false_is_actions_only():
+    assert parse({"pr": 607, "evergreen": False}) == {
+        "refs": [],
+        "prs": [607],
+        "evergreen_prs": [],
+    }
+
+
+def test_a_list_may_mix_the_forms():
+    assert parse(["main", 607, {"pr": 602, "evergreen": True}]) == {
+        "refs": ["main"],
+        "prs": [607, 602],
+        "evergreen_prs": [602],
+    }
+
+
+def test_a_quoted_number_is_a_pr_not_a_ref():
+    """A matrix value passes through YAML, so an integer may arrive quoted."""
+    assert parse("607") == {"refs": [], "prs": [607], "evergreen_prs": []}
+    assert parse({"pr": "607", "evergreen": True})["evergreen_prs"] == [607]
+
+
+def test_a_bool_is_not_a_pr_number():
+    """bool subclasses int, so `true` must not parse as PR #1."""
+    assert parse(True) == {"refs": [], "prs": [], "evergreen_prs": []}
+
+
+def test_several_downstream_repos():
+    parsed = rc.parse_ci_rerun(json.dumps({BACKEND: "main", "mongodb/other": 42}))
+    assert parsed[BACKEND]["refs"] == ["main"]
+    assert parsed["mongodb/other"]["prs"] == [42]
+
+
+@pytest.mark.parametrize("bad", ["not json", "[1, 2]", '"a string"'])
+def test_malformed_ci_rerun_is_rejected(bad):
+    with pytest.raises(SystemExit):
+        rc.parse_ci_rerun(bad)
+
+
+def test_a_key_that_is_not_owner_slash_name_is_rejected():
+    """The key scopes the App token, so a malformed one must not reach gh."""
+    with pytest.raises(SystemExit):
+        rc.parse_ci_rerun(json.dumps({"django-mongodb-backend": "main"}))
+
+
+# --- the three behaviours -------------------------------------------------
+
+
+class FakeGh:
+    """Records gh calls and answers reads from canned responses."""
+
+    def __init__(self, responses=None, fail_on=None):
+        self.calls: list[list[str]] = []
+        self.responses = responses or {}
+        self.fail_on = fail_on or {}
+
+    def __call__(self, args, check=True, capture_output=True, text=True):
+        self.calls.append(args)
+        key = " ".join(args[1:])
+        for pattern, stderr in self.fail_on.items():
+            if pattern in key:
+                raise subprocess.CalledProcessError(1, args, stderr=stderr)
+        for pattern, payload in self.responses.items():
+            if pattern in key:
+                return subprocess.CompletedProcess(args, 0, stdout=payload, stderr="")
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    def mutating(self):
+        """Every call that changes state downstream."""
+        return [
+            c
+            for c in self.calls
+            if c[1] in ("workflow", "pr") and c[2] in ("run", "comment")
+            or ("-X" in c and "POST" in c)
+        ]
+
+
+@pytest.fixture
+def gh(monkeypatch):
+    def install(responses=None, fail_on=None):
+        fake = FakeGh(responses, fail_on)
+        monkeypatch.setattr(subprocess, "run", fake)
+        return fake
+
+    return install
+
+
+WORKFLOWS = json.dumps(
+    [
+        ".github/workflows/test-python.yml",
+        ".github/workflows/test-python-atlas.yml",
+    ]
+)
+DISPATCHABLE = json.dumps({"content": ""})
+
+
+def b64(text):
+    import base64
+
+    return base64.b64encode(text.encode()).decode()
+
+
+def test_a_ref_dispatches_each_matching_workflow(gh):
+    fake = gh(
+        {
+            "actions/workflows": WORKFLOWS,
+            "contents/": b64("on:\n  workflow_dispatch:\n"),
+        }
+    )
+    rc.dispatch_workflows(BACKEND, "6.0.x", "test-python", dry_run=False)
+    dispatched = [c for c in fake.calls if c[1] == "workflow"]
+    assert [c[3] for c in dispatched] == ["test-python-atlas.yml", "test-python.yml"]
+    assert all(c[-1] == "6.0.x" for c in dispatched)
+
+
+def test_a_workflow_without_a_dispatch_trigger_is_skipped(gh):
+    """Dispatching one would 422, so it is inspected rather than assumed."""
+    fake = gh(
+        {
+            "actions/workflows": json.dumps([".github/workflows/test-python.yml"]),
+            "contents/": b64("on:\n  pull_request:\n"),
+        }
+    )
+    with pytest.raises(rc.Skip):
+        rc.dispatch_workflows(BACKEND, "main", "test-python", dry_run=False)
+    assert not fake.mutating()
+
+
+def test_a_workflow_missing_at_the_ref_is_skipped(gh):
+    """The Actions registry still lists workflows deleted on this branch."""
+    fake = gh(
+        {"actions/workflows": json.dumps([".github/workflows/test-python.yml"])},
+        fail_on={"contents/": "gh: Not Found (HTTP 404)"},
+    )
+    with pytest.raises(rc.Skip):
+        rc.dispatch_workflows(BACKEND, "5.2.x", "test-python", dry_run=False)
+    assert not fake.mutating()
+
+
+def test_a_pr_reruns_every_run_on_its_head_commit(gh):
+    """Not just the test workflows: lint and Evergreen checks gate the merge."""
+    fake = gh(
+        {
+            "pr view": json.dumps({"state": "OPEN", "headRefOid": "abc123"}),
+            "actions/runs?": json.dumps([1, 2, 3]),
+        }
+    )
+    rc.rerun_pr(BACKEND, 607, dry_run=False)
+    reruns = [c for c in fake.calls if "rerun" in " ".join(c)]
+    assert len(reruns) == 3
+
+
+def test_a_closed_pr_is_skipped(gh):
+    """A stale mapping is a config bug worth surfacing, not acting on."""
+    fake = gh({"pr view": json.dumps({"state": "MERGED", "headRefOid": "abc123"})})
+    with pytest.raises(rc.Skip, match="merged"):
+        rc.rerun_pr(BACKEND, 607, dry_run=False)
+    assert not fake.mutating()
+
+
+def test_evergreen_skips_a_closed_pr(gh):
+    fake = gh({"pr view": json.dumps({"state": "CLOSED"})})
+    with pytest.raises(rc.Skip, match="closed"):
+        rc.retry_evergreen(BACKEND, 607, dry_run=False)
+    assert not fake.mutating()
+
+
+def test_evergreen_comments_the_retry(gh):
+    fake = gh({"pr view": json.dumps({"state": "OPEN"})})
+    rc.retry_evergreen(BACKEND, 607, dry_run=False)
+    assert ["gh", "pr", "comment", "607", "--repo", BACKEND, "--body",
+            "evergreen retry"] in fake.calls
+
+
+def test_runs_past_the_retry_window_say_so(gh):
+    """The refusal is otherwise indistinguishable from a permissions problem."""
+    fake = gh(
+        {
+            "pr view": json.dumps({"state": "OPEN", "headRefOid": "abc123"}),
+            "actions/runs?": json.dumps([1]),
+        },
+        fail_on={"rerun": "gh: This run is over a month ago (HTTP 403)"},
+    )
+    with pytest.raises(rc.Skip, match="past GitHub's retry window"):
+        rc.rerun_pr(BACKEND, 607, dry_run=False)
+
+
+# --- whole-run behaviour --------------------------------------------------
+
+
+def test_one_bad_target_does_not_stop_the_others(gh, monkeypatch, capsys):
+    """Best-effort, like dbx: a stale entry must not mask a branch that synced."""
+    fake = gh(
+        {
+            "pr view": json.dumps({"state": "MERGED"}),
+            "actions/workflows": json.dumps([".github/workflows/test-python.yml"]),
+            "contents/": b64("on:\n  workflow_dispatch:\n"),
+        }
+    )
+    monkeypatch.setenv("CI_RERUN", json.dumps({BACKEND: ["main", 607]}))
+    monkeypatch.setenv("DRY_RUN", "false")
+    assert rc.main() == 0
+    out = capsys.readouterr().out
+    assert "::warning::" in out
+    assert any(c[1] == "workflow" and c[2] == "run" for c in fake.calls)
+
+
+def test_an_empty_ci_rerun_does_nothing(gh, monkeypatch):
+    fake = gh()
+    monkeypatch.setenv("CI_RERUN", "")
+    assert rc.main() == 0
+    assert not fake.calls
+
+
+def test_a_dry_run_makes_no_mutating_call(gh, monkeypatch, capsys):
+    fake = gh(
+        {
+            "actions/workflows": json.dumps([".github/workflows/test-python.yml"]),
+            "contents/": b64("on:\n  workflow_dispatch:\n"),
+        }
+    )
+    monkeypatch.setenv("CI_RERUN", json.dumps({BACKEND: "main"}))
+    monkeypatch.setenv("DRY_RUN", "true")
+    assert rc.main() == 0
+    assert not fake.mutating()
+    assert "Would run: gh workflow run" in capsys.readouterr().out

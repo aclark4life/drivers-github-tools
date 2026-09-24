@@ -1,79 +1,68 @@
 name: Re-trigger Downstream CI
 description: >-
-  Re-run a downstream repository's CI after this repository changed something it
-  depends on, such as a force-pushed branch it checks out by ref.
+  Re-run a downstream repository's CI after a branch it checks out by ref was
+  force-pushed. Ports `dbx sync --all-branches` to GitHub Actions.
 inputs:
-  repo:
-    description: The downstream repository to re-trigger, as owner/name
-    required: true
   ci_rerun:
     description: >-
-      How to re-trigger. {"kind":"evergreen","pr":N} comments on pull request
-      N to make Evergreen retry. {"kind":"pr","pr":N} re-queues the matching
-      runs on N's head commit. {"kind":"ref","ref":"branch"} dispatches the
-      matching workflows on a branch or tag.
+      JSON object mapping each downstream owner/name to how its CI re-runs, in
+      the same shape as dbx's ci_rerun config so a mapping copies across
+      unchanged. A string dispatches the downstream test workflows on that ref.
+      An integer re-runs the workflow runs on that PR. {"pr": N, "evergreen":
+      true} does the PR re-run and also comments 'evergreen retry'. A list may
+      mix the forms. Empty re-triggers nothing.
     required: true
   app_id:
     description: >-
-      ID of a GitHub App installed on the downstream repository. This action
-      mints the scoped token itself, so callers never handle a cross-repository
-      token.
+      ID of a GitHub App installed on every downstream repository named in
+      ci_rerun. This action mints the scoped token itself, so callers never
+      handle a cross-repository token.
     required: true
   private_key:
     description: The private key of the GitHub App
     required: true
+  owner:
+    description: >-
+      Owner the App token is scoped to. Defaults to this repository's owner,
+      which is wrong when the downstream repository has a different one.
+    default: ${{ github.repository_owner }}
+  repositories:
+    description: >-
+      Comma-separated repository names the App token is scoped to, without the
+      owner. Defaults to every repository the App can reach in `owner`.
+    default: ""
   workflow_pattern:
     description: >-
-      Glob matched against workflow file names, choosing what the 'pr' and
-      'ref' kinds act on. Unscoped, the 'pr' kind would re-queue every run on
-      the commit, including release workflows.
-    default: test-python*
-  evergreen_comment:
-    description: The comment body that nudges Evergreen to re-run its patch
-    default: evergreen retry
+      Matched against downstream workflow paths to choose what a ref dispatches.
+      Scoped by default, or a dispatch would also start release workflows.
+    default: test-python
   dry_run:
-    description: If 'true', report intended actions without re-triggering anything
+    description: If 'true', log the calls without making them
     default: "false"
 
 runs:
   using: composite
   steps:
-    # Runs first, so a malformed repo or an unknown kind fails before a token
-    # is issued.
-    - name: Parse the inputs
-      id: parse
-      shell: bash
-      env:
-        REPO: ${{ inputs.repo }}
-        CI_RERUN: ${{ inputs.ci_rerun }}
-      run: ${{ github.action_path }}/parse_inputs.sh
-
-    # Scoped to the downstream repository and to what the kind needs. An empty
-    # permission is not requested at all.
     - name: Generate a downstream-scoped app token
       id: app-token
       uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
       with:
         app-id: ${{ inputs.app_id }}
         private-key: ${{ inputs.private_key }}
-        owner: ${{ steps.parse.outputs.owner }}
-        repositories: ${{ steps.parse.outputs.name }}
-        permission-pull-requests: ${{ steps.parse.outputs.kind == 'evergreen' && 'write' || steps.parse.outputs.kind == 'pr' && 'read' || '' }}
-        permission-actions: ${{ steps.parse.outputs.kind != 'evergreen' && 'write' || '' }}
-      env:
-        FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+        owner: ${{ inputs.owner }}
+        repositories: ${{ inputs.repositories }}
+        # issues: write covers pull request comments, which are issue comments.
+        permission-actions: write
+        permission-pull-requests: read
+        permission-issues: write
 
-    - name: Re-trigger ${{ inputs.repo }}
+    - name: Re-trigger downstream CI
       shell: bash
       env:
         GH_TOKEN: ${{ steps.app-token.outputs.token }}
-        # Explicit, rather than inferred from a git remote, so this needs no
-        # checkout.
-        GH_REPO: ${{ inputs.repo }}
-        KIND: ${{ steps.parse.outputs.kind }}
-        PR: ${{ steps.parse.outputs.pr }}
-        REF: ${{ steps.parse.outputs.ref }}
+        CI_RERUN: ${{ inputs.ci_rerun }}
         WORKFLOW_PATTERN: ${{ inputs.workflow_pattern }}
-        EVERGREEN_COMMENT: ${{ inputs.evergreen_comment }}
         DRY_RUN: ${{ inputs.dry_run }}
-      run: ${{ github.action_path }}/retrigger.sh
+      # Only the standard library, so no install step is needed. The runner
+      # images ship a Python new enough for the annotations used here.
+      run: python3 ${{ github.action_path }}/retrigger_ci.py

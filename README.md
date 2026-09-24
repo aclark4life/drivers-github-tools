@@ -430,38 +430,43 @@ jobs:
 
 ### Re-trigger Downstream CI
 
-Use this action when a repository changes something a *different* repository
-depends on, and nothing else tells that repository to re-test. The motivating
-case is a fork branch checked out by ref: a force-push changes what the
-downstream builds against, but its CI has no reason to run again.
+Use this action when a repository force-pushes a branch that a *different*
+repository checks out by ref. The downstream CI pins the branch at a ref, so a
+rebase changes what it builds against without re-triggering anything.
+
+This ports `dbx sync --all-branches` to GitHub Actions and takes that command's
+`ci_rerun` config shape unchanged, so a mapping copies across verbatim.
+
+`ci_rerun` maps each downstream `owner/name` to a target, where the value's
+type selects the behaviour:
+
+| Value | Effect |
+| --- | --- |
+| `"main"` | Dispatch the downstream `test-python*` workflows on that ref |
+| `607` | Re-run every workflow run on PR 607's head commit |
+| `{"pr": 607, "evergreen": true}` | Re-run PR 607's runs **and** comment `evergreen retry` |
+| `["main", 607]` | A list may mix the forms |
+
+The object form is additive: the PR still gets its Actions runs re-queued, and
+the flag adds Evergreen on top. Evergreen pins the fork ref just as Actions
+does, so a rebase does not re-run it either.
 
 The action mints the downstream-scoped App token itself, so the caller passes
-only `app_id` and `private_key`. The App must be installed on the downstream
-repository.
+only `app_id` and `private_key`. The App must be installed on every downstream
+repository named in the mapping. Set `owner` when the downstream repository
+has a different owner than the calling repository.
 
-`ci_rerun` says how to re-trigger:
-
-| `ci_rerun` | Effect | App permissions |
-| --- | --- | --- |
-| `{"kind":"evergreen","pr":422}` | Comment on pull request 422 to make Evergreen retry. Fails if the pull request is not open, because Evergreen ignores the comment otherwise. | `pull-requests: write` |
-| `{"kind":"pr","pr":422}` | Re-queue the completed matching runs on pull request 422's head commit. | `pull-requests: read`, `actions: write` |
-| `{"kind":"ref","ref":"main"}` | Dispatch the matching workflows on a branch or tag. They need a `workflow_dispatch` trigger. | `actions: write` |
-
-The `pr` and `ref` kinds act only on workflows whose file name matches
-`workflow_pattern`, default `test-python*`. Keep this scoped, or the `pr` kind
-re-queues release workflows too.
-
-Anything that leaves the downstream repository untested fails rather than
-skipping: an unknown `kind`, a `kind` missing the field it acts on, a closed
-pull request, a SHA where a dispatchable ref is required, or a pattern that
-matches no workflow.
+Re-triggering is best-effort, matching `dbx`: a stale PR number, a closed pull
+request, or an API error is reported as a warning and skipped, so one bad entry
+cannot mask the branches that re-triggered correctly.
 
 ```yaml
 - name: Re-trigger backend CI
   uses: mongodb-labs/drivers-github-tools/retrigger-ci@v3
   with:
-    repo: mongodb/django-mongodb-backend
-    ci_rerun: '{"kind":"ref","ref":"main"}'
+    ci_rerun: '{"mongodb/django-mongodb-backend": "main"}'
+    owner: mongodb
+    repositories: django-mongodb-backend
     app_id: ${{ vars.APP_ID }}
     private_key: ${{ secrets.APP_PRIVATE_KEY }}
 ```

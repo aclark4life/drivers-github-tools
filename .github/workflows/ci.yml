@@ -85,11 +85,12 @@ jobs:
         with:
           persist-credentials: false
 
-      # bash and jq only; the tests stub out gh, so no token or network access.
+      - name: Install Python tooling
+        uses: $/python/setup
+
+      # The tests stub gh, so no token or network access is needed.
       - name: Run retrigger-ci tests
-        run: |
-          bash retrigger-ci/test_parse_inputs.sh
-          bash retrigger-ci/test_retrigger.sh
+        run: uv run --no-project --with pytest python -m pytest retrigger-ci -q
 
   test-python:
     name: Python Tests
