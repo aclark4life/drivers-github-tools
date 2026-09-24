@@ -44,8 +44,6 @@ runs:
         private-key: ${{ inputs.private_key }}
         permission-contents: write
         permission-pull-requests: write
-      env:
-        FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
     - name: Require an app token outside dry runs
       if: inputs.dry_run != 'true' && (inputs.app_id == '' || inputs.private_key == '')
