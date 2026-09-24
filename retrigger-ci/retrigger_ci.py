@@ -8,14 +8,14 @@ The mapping shape matches the one the sync tooling already uses, so a mapping
 can be copied across verbatim:
 
     {"mongodb/django-mongodb-backend": "main"}                      # a git ref
-    {"mongodb/django-mongodb-backend": 607}                         # a PR number
-    {"mongodb/django-mongodb-backend": {"pr": 607, "evergreen": true}}
-    {"mongodb/django-mongodb-backend": ["main", 607]}               # a mix
+    {"mongodb/django-mongodb-backend": {"pr": 622, "evergreen": true}}
+    {"mongodb/django-mongodb-backend": ["main", {"pr": 622}]}        # a mix
 
-The value's *type* selects the behaviour: a string dispatches the downstream
-``test-python*`` workflows on that ref, an integer re-runs the workflow runs on
-that PR's head commit, and the object form does the PR re-run *and* comments
-``evergreen retry`` to re-trigger the PR's Evergreen patch.
+The value's *type* selects the behaviour. A string dispatches the downstream
+``test-python*`` workflows on that ref, which is how a branch with no pull
+request is re-tested. The object form re-runs the workflow runs on that pull
+request's head commit, and with ``evergreen`` also comments ``evergreen retry``
+to re-trigger its Evergreen patch.
 
 Best-effort: a stale PR number or an API error is reported and skipped rather
 than failing the run, so one bad mapping entry cannot mask the branches that
@@ -100,25 +100,20 @@ def parse_ci_rerun(raw: str) -> dict[str, dict]:
         for item in value if isinstance(value, list) else [value]:
             # bool is an int subclass, so exclude it before the int check or
             # `true` would parse as PR #1.
-            if isinstance(item, bool):
-                continue
-            if isinstance(item, int):
-                prs.append(item)
-            elif isinstance(item, str):
-                # A matrix value reaches us through YAML, so a PR number may
-                # arrive quoted. Treat a digit-only string as a PR rather than
-                # a ref, which no branch name would look like.
-                (prs if item.isdigit() else refs).append(
-                    int(item) if item.isdigit() else item
-                )
+            if isinstance(item, str):
+                refs.append(item)
             elif isinstance(item, dict):
                 pr = item.get("pr")
+                # A matrix value reaches us through YAML, so a number may
+                # arrive quoted. bool subclasses int, so exclude it or `true`
+                # would parse as pull request #1.
                 if isinstance(pr, str) and pr.isdigit():
                     pr = int(pr)
                 if isinstance(pr, bool) or not isinstance(pr, int):
-                    continue
-                # The object form still re-runs the PR's Actions runs, exactly
-                # as a bare integer does. The flag only adds Evergreen on top.
+                    raise SystemExit(
+                        f"::error::ci_rerun 'pr' must be a number, got {pr!r}"
+                    )
+                # The Actions runs always re-run; the flag adds Evergreen.
                 prs.append(pr)
                 if item.get("evergreen"):
                     evergreen_prs.append(pr)

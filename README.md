@@ -440,12 +440,13 @@ type selects the behaviour:
 | Value | Effect |
 | --- | --- |
 | `"main"` | Dispatch the downstream `test-python*` workflows on that ref |
-| `607` | Re-run every workflow run on PR 607's head commit |
-| `{"pr": 607, "evergreen": true}` | Re-run PR 607's runs **and** comment `evergreen retry` |
-| `["main", 607]` | A list may mix the forms |
+| `{"pr": 622}` | Re-run every workflow run on pull request 622's head commit |
+| `{"pr": 622, "evergreen": true}` | Re-run 622's runs **and** comment `evergreen retry` |
+| `["main", {"pr": 622}]` | A list may mix the forms |
 
-The object form is additive: the PR still gets its Actions runs re-queued, and
-the flag adds Evergreen on top. Evergreen pins the fork ref just as Actions
+A ref is how a branch with no pull request is re-tested. The `evergreen` flag
+is additive: the pull request still gets its Actions runs re-queued, and the
+flag adds Evergreen on top. Evergreen pins the fork ref just as Actions
 does, so a rebase does not re-run it either. The shape matches the mapping the
 existing sync tooling uses, so one copies across verbatim.
 

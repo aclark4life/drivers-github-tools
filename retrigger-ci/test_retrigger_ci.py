@@ -33,48 +33,50 @@ def test_string_is_a_ref():
     assert parse("main") == {"refs": ["main"], "prs": [], "evergreen_prs": []}
 
 
-def test_integer_is_a_pr():
-    assert parse(607) == {"refs": [], "prs": [607], "evergreen_prs": []}
+def test_a_pr_object_reruns_its_actions():
+    assert parse({"pr": 622}) == {"refs": [], "prs": [622], "evergreen_prs": []}
 
 
-def test_evergreen_object_also_reruns_the_prs_actions():
+def test_evergreen_also_reruns_the_prs_actions():
     """The flag adds Evergreen, it does not replace the Actions re-run."""
-    assert parse({"pr": 607, "evergreen": True}) == {
+    assert parse({"pr": 622, "evergreen": True}) == {
         "refs": [],
-        "prs": [607],
-        "evergreen_prs": [607],
+        "prs": [622],
+        "evergreen_prs": [622],
     }
 
 
 def test_evergreen_false_is_actions_only():
-    assert parse({"pr": 607, "evergreen": False}) == {
+    assert parse({"pr": 622, "evergreen": False}) == {
         "refs": [],
-        "prs": [607],
+        "prs": [622],
         "evergreen_prs": [],
     }
 
 
 def test_a_list_may_mix_the_forms():
-    assert parse(["main", 607, {"pr": 602, "evergreen": True}]) == {
+    assert parse(["main", {"pr": 622}, {"pr": 602, "evergreen": True}]) == {
         "refs": ["main"],
-        "prs": [607, 602],
+        "prs": [622, 602],
         "evergreen_prs": [602],
     }
 
 
-def test_a_quoted_number_is_a_pr_not_a_ref():
-    """A matrix value passes through YAML, so an integer may arrive quoted."""
-    assert parse("607") == {"refs": [], "prs": [607], "evergreen_prs": []}
-    assert parse({"pr": "607", "evergreen": True})["evergreen_prs"] == [607]
+def test_a_quoted_pr_number_still_parses():
+    """A matrix value passes through YAML, so a number may arrive quoted."""
+    assert parse({"pr": "622", "evergreen": True})["evergreen_prs"] == [622]
 
 
 def test_a_bool_is_not_a_pr_number():
-    """bool subclasses int, so `true` must not parse as PR #1."""
-    assert parse(True) == {"refs": [], "prs": [], "evergreen_prs": []}
+    """bool subclasses int, so `true` must not parse as pull request #1."""
+    with pytest.raises(SystemExit):
+        parse({"pr": True})
 
 
 def test_several_downstream_repos():
-    parsed = rc.parse_ci_rerun(json.dumps({BACKEND: "main", "mongodb/other": 42}))
+    parsed = rc.parse_ci_rerun(
+        json.dumps({BACKEND: "main", "mongodb/other": {"pr": 42}})
+    )
     assert parsed[BACKEND]["refs"] == ["main"]
     assert parsed["mongodb/other"]["prs"] == [42]
 
@@ -245,7 +247,7 @@ def test_one_bad_target_does_not_stop_the_others(gh, monkeypatch, capsys):
             "contents/": b64("on:\n  workflow_dispatch:\n"),
         }
     )
-    monkeypatch.setenv("CI_RERUN", json.dumps({BACKEND: ["main", 607]}))
+    monkeypatch.setenv("CI_RERUN", json.dumps({BACKEND: ["main", {"pr": 622}]}))
     monkeypatch.setenv("DRY_RUN", "false")
     assert rc.main() == 0
     out = capsys.readouterr().out

@@ -6,10 +6,11 @@ inputs:
   ci_rerun:
     description: >-
       JSON object mapping each downstream owner/name to how its CI re-runs.
-      A string dispatches the downstream test workflows on that ref.
-      An integer re-runs the workflow runs on that PR. {"pr": N, "evergreen":
-      true} does the PR re-run and also comments 'evergreen retry'. A list may
-      mix the forms. Empty re-triggers nothing.
+      A string dispatches the downstream test workflows on that ref, which is
+      how a branch with no pull request is re-tested. {"pr": N} re-runs the
+      workflow runs on that pull request, and {"pr": N, "evergreen": true} also
+      comments 'evergreen retry'. A list may mix the forms. Empty re-triggers
+      nothing.
     required: true
   app_id:
     description: >-
