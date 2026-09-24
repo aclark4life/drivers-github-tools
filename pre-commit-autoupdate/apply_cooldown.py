@@ -1,15 +1,13 @@
 """Hold back hook updates whose release is younger than the cooldown.
 
 ``pre-commit autoupdate`` always moves each hook to the newest tag, with no way
-to skip a release that only just landed. A compromised or broken release is most
-dangerous in its first days, before anyone has noticed and yanked it, so this
-reverts any rev the update moved forward to a tag published inside the cooldown
-window, leaving the previous rev in place.
+to skip one that just landed. A bad release is most dangerous in its first days,
+before anyone has yanked it, so this reverts any rev moved to a tag published
+inside the cooldown window.
 
-Nothing is skipped permanently: once the tag ages past the cutoff, the next
-scheduled run picks it up. A repo whose newest tag is too young is simply left
-where it is rather than being moved to an older intermediate tag, because the
-next run would move it to the newest one anyway.
+Nothing is held permanently: once the tag ages past the cutoff, the next run
+picks it up. A repo whose newest tag is too young stays where it is rather than
+moving to an older intermediate tag, which the next run would supersede.
 
 Usage: apply_cooldown.py <old-config> <new-config> <cooldown-days>
 
@@ -24,8 +22,8 @@ import time
 
 import pre_commit_config as config
 
-# A hook repo that hangs should not hang the weekly job. The fetch below asks
-# for a single tag at depth 1, so this is far longer than a healthy one needs.
+# A hanging hook repo must not hang the weekly job. The fetch asks for one tag
+# at depth 1, so this is far longer than a healthy one needs.
 GIT_TIMEOUT_SECONDS = 120
 
 
@@ -42,15 +40,13 @@ def git(*args: str, timeout: int = GIT_TIMEOUT_SECONDS) -> subprocess.CompletedP
 def tag_timestamp(url: str, rev: str) -> int | None:
     """Return the Unix timestamp ``rev`` was tagged at, or None if unknown.
 
-    Fetching a single tag into a throwaway bare repo keeps this to one shallow
-    network round trip and works against any git host, so it needs no API
-    credentials and no per-host special casing.
+    Fetching one tag into a throwaway bare repo is a single shallow round trip
+    and works against any git host, so it needs no credentials.
 
-    An annotated tag reports the date the tag itself was created, which is when
-    the release was cut. A lightweight tag has no such date, so its commit date
-    is used instead. That can read older than the release, which would let a
-    young release through, but pre-commit hook repos overwhelmingly publish
-    annotated tags and the alternative is refusing to update at all.
+    An annotated tag carries the date it was created, which is when the release
+    was cut. A lightweight tag has none, so its commit date stands in. That can
+    read older and let a young release through, but hook repos overwhelmingly
+    publish annotated tags and the alternative is never updating.
     """
     with tempfile.TemporaryDirectory() as tmp:
         if git("init", "--quiet", "--bare", tmp).returncode != 0:
@@ -107,10 +103,8 @@ def main() -> None:
         name = config.short_name(current.repo)
         stamp = tag_timestamp(current.repo, current.rev)
         if stamp is None:
-            # Age could not be established, so the release cannot be shown to
-            # have cleared the cooldown. Holding is the safe direction, and the
-            # warning keeps a repo that can never be dated from silently
-            # freezing forever.
+            # Unknown age cannot be shown to clear the cooldown, so hold. The
+            # warning keeps an undatable repo from silently freezing forever.
             print(
                 f"::warning::Could not determine the release date of {name} {current.rev};"
                 " holding it back. Check that the rev is a tag reachable in the repo.",

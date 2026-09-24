@@ -1,27 +1,23 @@
 """Read and rewrite the ``rev:`` fields of a ``.pre-commit-config.yaml``.
 
-The file is handled as lines rather than parsed into a YAML object and dumped
-back, which is also how ``pre-commit autoupdate`` itself rewrites revs. A
-round trip through a YAML library reflows the document and drops every comment,
-so a cooldown that reverted one rev would rewrite the whole file along with it.
-A plain line scan is enough here because the two fields involved, ``repo:`` and
-``rev:``, are always plain scalars.
+The file is handled as lines, which is how ``pre-commit autoupdate`` rewrites
+revs too. A round trip through a YAML library reflows the document and drops
+every comment, so reverting one rev would rewrite the whole file. A line scan
+suffices because ``repo:`` and ``rev:`` are always plain scalars.
 
-Only the standard library is used, so the action runs on whatever interpreter
-supplied ``pre-commit`` without needing an environment of its own. Requires
-Python 3.10 or newer for the ``X | None`` annotations, which is well below what
-any pre-commit release supports.
+Standard library only, so this runs on whatever interpreter supplied
+``pre-commit``.
 """
 
 import re
 from typing import NamedTuple
 
-# `- repo: <url>`, allowing a trailing comment. `local` and `meta` repos match
-# too; they carry no rev, so they simply never pair with one below.
+# `- repo: <url>`, allowing a trailing comment. `local` and `meta` match too,
+# but carry no rev, so they never pair with one below.
 REPO_RE = re.compile(r"^\s*-\s+repo:\s*(?P<value>[^\s#]+)\s*(?:#.*)?$")
 
-# `rev: <value>`, capturing the surrounding text so a rewrite can put the new
-# value back without disturbing indentation, quoting, or a trailing comment.
+# `rev: <value>`, capturing the surrounding text so a rewrite preserves
+# indentation, quoting, and any trailing comment.
 REV_RE = re.compile(
     r"^(?P<prefix>\s*rev:\s*)"
     r"(?P<quote>['\"]?)(?P<value>[^\s'\"#]+)(?P=quote)"
@@ -41,8 +37,8 @@ def parse(lines: list[str]) -> list[Entry]:
     """Pair each ``repo:`` with the ``rev:`` that follows it.
 
     A repo with no rev, such as ``local`` or ``meta``, yields no entry. The
-    first rev after a repo wins, so a stray later ``rev:`` cannot reattach
-    itself to a repo that already has one.
+    first rev after a repo wins, so a later stray ``rev:`` cannot reattach to a
+    repo that already has one.
     """
     entries: list[Entry] = []
     repo: str | None = None
@@ -85,8 +81,8 @@ def write(path: str, lines: list[str]) -> None:
 def short_name(repo: str) -> str:
     """Shorten a repo URL to ``owner/name`` for display.
 
-    Falls back to the URL unchanged when it does not have two path segments to
-    take, so an unusual remote is still identifiable in a summary.
+    Falls back to the URL unchanged when it has fewer than two path segments,
+    so an unusual remote stays identifiable.
     """
     trimmed = repo.rstrip("/")
     if trimmed.endswith(".git"):
@@ -100,8 +96,8 @@ def short_name(repo: str) -> str:
 def changed(old: list[Entry], new: list[Entry]) -> list[tuple[Entry, Entry]]:
     """Pair up entries whose rev moved between the two parses.
 
-    Matching is by repo URL, so a repo added, removed, or reordered by the
-    update is left out rather than being mistaken for a version change.
+    Matching is by repo URL, so a repo added, removed, or reordered is left
+    out rather than mistaken for a version change.
     """
     old_by_repo = {entry.repo: entry for entry in old}
     pairs = []

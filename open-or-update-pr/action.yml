@@ -39,9 +39,8 @@ runs:
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.token }}
-        # Target the repository explicitly rather than letting gh infer it from
-        # the git remote, so the pull request lookup cannot depend on how the
-        # caller configured its checkout.
+        # Explicit, rather than inferred from the git remote, so the lookup
+        # cannot depend on how the caller configured its checkout.
         GH_REPO: ${{ github.repository }}
         BRANCH: ${{ inputs.branch }}
         BASE: ${{ inputs.base }}

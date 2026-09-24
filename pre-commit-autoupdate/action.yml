@@ -38,9 +38,8 @@ inputs:
 runs:
   using: composite
   steps:
-    # A dry run only reads, so it needs no app token and stays usable before an
-    # App is configured. Real runs push and open pull requests, so they require
-    # one and the next step fails fast when it is missing.
+    # A dry run only reads, so it needs no app token and works before an App
+    # is configured. Real runs push, so the next step fails fast without one.
     - name: Generate app token
       id: app-token
       if: inputs.dry_run != 'true' && inputs.app_id != '' && inputs.private_key != ''
@@ -80,9 +79,9 @@ runs:
       id: prepare
       shell: bash
       env:
-        # Only a dry run may use github.token. A live run gets the app token or
-        # nothing, so a future edit cannot silently reintroduce a fallback that
-        # opens pull requests CI will never run on.
+        # Only a dry run may use github.token. A live run gets the app token
+        # or nothing, so no future edit can reintroduce a fallback that opens
+        # pull requests CI never runs on.
         GH_TOKEN: ${{ inputs.dry_run == 'true' && github.token || steps.app-token.outputs.token }}
         BRANCH: ${{ inputs.branch }}
         DRY_RUN: ${{ inputs.dry_run }}
@@ -92,9 +91,8 @@ runs:
         ACTION_PATH: ${{ github.action_path }}
       run: ${{ github.action_path }}/autoupdate.sh
 
-    # Skipped when the update produced no change, or when the cooldown held
-    # every one of them back, so a run with nothing to adopt never touches an
-    # existing pull request.
+    # Skipped when nothing changed, or the cooldown held everything back, so
+    # a run with nothing to adopt never touches an existing pull request.
     - name: Create or update the pull request
       if: steps.prepare.outputs.changed == 'true'
       uses: $/open-or-update-pr

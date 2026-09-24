@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Summarize the upgraded lock file, commit it to the bot owned branch, push, and
-# report the summary back as step outputs. action.yml passes those to
-# $/open-or-update-pr, which opens or refreshes the pull request.
+# Summarize the upgraded lock file, commit it to the bot owned branch, push,
+# and report the summary as step outputs. action.yml passes those to
+# $/open-or-update-pr.
 #
 # Sets two outputs: `changed`, which gates that step, and `body`, the pull
 # request body.
@@ -10,9 +10,9 @@
 # GITHUB_OUTPUT plus GITHUB_REPOSITORY from the Actions runtime.
 set -euo pipefail
 
-# Write a step output whose value may span lines. A random delimiter keeps a
-# value that happens to contain the delimiter text from closing the heredoc
-# early, which would let the rest of the value be parsed as further outputs.
+# Write a step output that may span lines. A random delimiter stops a value
+# containing the delimiter text from closing the heredoc early, which would let
+# the rest parse as further outputs.
 emit_output() {
   local name="$1"
   local value="$2"
@@ -46,10 +46,9 @@ else
   BODY="No package version changes. The lock file metadata changed; see the file diff for details."
 fi
 
-# Everything below mutates state, so a dry run skips all of it and leaves the
-# workspace untouched. The pull request step still runs and still reports the
-# decision: it finds an existing pull request by querying the remote for the head
-# branch, so it needs no local branch or commit.
+# Everything below mutates state, so a dry run skips it and leaves the
+# workspace untouched. The pull request step still reports its decision: it
+# queries the remote for the head branch, needing no local branch or commit.
 if [ "$DRY_RUN" != "true" ]; then
   git config user.name "github-actions[bot]"
   git config user.email "github-actions[bot]@users.noreply.github.com"

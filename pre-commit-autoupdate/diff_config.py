@@ -2,8 +2,8 @@
 
 Usage: diff_config.py <old-config> <new-config>
 
-Run after the cooldown has been applied, so the summary describes the revs the
-pull request actually carries rather than the ones autoupdate first proposed.
+Run after the cooldown, so the summary describes the revs the pull request
+carries rather than the ones autoupdate proposed.
 """
 
 import sys

@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# Apply the cooldown to the freshly updated config, summarize what is left,
-# commit it to the bot owned branch, push, and report the summary back as step
-# outputs. action.yml passes those to $/open-or-update-pr, which opens or
-# refreshes the pull request.
+# Apply the cooldown to the updated config, summarize what is left, commit it
+# to the bot owned branch, push, and report the summary as step outputs.
+# action.yml passes those to $/open-or-update-pr.
 #
 # Sets two outputs: `changed`, which gates that step, and `body`, the pull
 # request body.
@@ -12,9 +11,9 @@
 # Actions runtime.
 set -euo pipefail
 
-# Write a step output whose value may span lines. A random delimiter keeps a
-# value that happens to contain the delimiter text from closing the heredoc
-# early, which would let the rest of the value be parsed as further outputs.
+# Write a step output that may span lines. A random delimiter stops a value
+# containing the delimiter text from closing the heredoc early, which would let
+# the rest parse as further outputs.
 emit_output() {
   local name="$1"
   local value="$2"
@@ -34,21 +33,19 @@ no_changes() {
 }
 
 # Compare against the copy taken before the update, which is the same baseline
-# the summary below is built from. `git diff` would compare against HEAD
-# instead, so a workspace that was already dirty would disagree with the summary
-# and could open a pull request whose body reports no hook changes.
+# the summary is built from. `git diff` compares against HEAD, so an already
+# dirty workspace would disagree with the summary and could open a pull request
+# whose body reports no hook changes.
 if cmp -s "$OLD_CONFIG" "$CONFIG_PATH"; then
   no_changes "No changes detected, skipping PR creation"
 fi
 
-# Reverts any rev whose release is still inside the cooldown, and prints a
-# markdown bullet for each one it held. Runs before the summary so the pull
-# request describes the revs it actually carries.
+# Reverts any rev still inside the cooldown, printing a bullet for each. Runs
+# before the summary so the pull request describes what it carries.
 HELD=$(python3 "$ACTION_PATH/apply_cooldown.py" "$OLD_CONFIG" "$CONFIG_PATH" "$COOLDOWN_DAYS")
 
-# The cooldown can revert every proposed update, which puts the config back
-# exactly where it started. Re-checking here is what keeps that case from
-# opening a pull request with an empty diff.
+# The cooldown can revert every update, putting the config back where it
+# started. Re-checking keeps that from opening an empty pull request.
 if cmp -s "$OLD_CONFIG" "$CONFIG_PATH"; then
   no_changes "Every update was held back by the cooldown, skipping PR creation"
 fi
