@@ -434,21 +434,28 @@ Use this action when a repository force-pushes a branch that a *different*
 repository checks out by ref. The downstream CI pins the branch at a ref, so a
 rebase changes what it builds against without re-triggering anything.
 
-`ci_rerun` maps each downstream `owner/name` to a target, where the value's
-type selects the behaviour:
+`ci_rerun` maps each downstream `owner/name` to what consumes the branch.
+There are two cases.
 
-| Value | Effect |
-| --- | --- |
-| `"main"` | Dispatch the downstream `test-python*` workflows on that ref |
-| `{"pr": 622}` | Re-run every workflow run on pull request 622's head commit |
-| `{"pr": 622, "evergreen": true}` | Re-run 622's runs **and** comment `evergreen retry` |
-| `["main", {"pr": 622}]` | A list may mix the forms |
+**A merged branch.** No pull request exists, so the downstream `test-python*`
+workflows are dispatched on that branch:
 
-A ref is how a branch with no pull request is re-tested. The `evergreen` flag
-is additive: the pull request still gets its Actions runs re-queued, and the
-flag adds Evergreen on top. Evergreen pins the fork ref just as Actions
-does, so a rebase does not re-run it either. The shape matches the mapping the
-existing sync tooling uses, so one copies across verbatim.
+```json
+{"mongodb/django-mongodb-backend": "main"}
+```
+
+**An open pull request.** Its checks gate the merge, so the workflow runs on
+its head commit re-run. Set `evergreen` when the downstream also tests in
+Evergreen: Evergreen pins the branch just as Actions does, so a rebase
+re-triggers neither, and the two need separate calls.
+
+```json
+{"mongodb/django-mongodb-backend": {"pr": 622, "evergreen": true}}
+```
+
+A list may name several, mixing the two: `["main", {"pr": 622}]`. The shape
+matches the mapping the existing sync tooling uses, so one copies across
+verbatim.
 
 The action mints the downstream-scoped App token itself, so the caller passes
 only `app_id` and `private_key`. The App must be installed on every downstream

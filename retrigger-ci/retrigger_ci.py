@@ -5,17 +5,20 @@ branch does not re-trigger it. This reads a ``ci_rerun`` mapping naming, per
 fork branch, the downstream repositories and how to re-run each one.
 
 The mapping shape matches the one the sync tooling already uses, so a mapping
-can be copied across verbatim:
+can be copied across verbatim. Each downstream repository falls into one of
+two cases, named by the value's type:
 
-    {"mongodb/django-mongodb-backend": "main"}                      # a git ref
+    {"mongodb/django-mongodb-backend": "main"}
+        A merged branch. No pull request exists, so the downstream
+        ``test-python*`` workflows are dispatched on it.
+
     {"mongodb/django-mongodb-backend": {"pr": 622, "evergreen": true}}
-    {"mongodb/django-mongodb-backend": ["main", {"pr": 622}]}        # a mix
+        An open pull request. Its checks gate the merge, so the workflow runs
+        on its head commit re-run. ``evergreen`` adds a second call, since
+        Evergreen pins the branch as Actions does and a rebase re-triggers
+        neither.
 
-The value's *type* selects the behaviour. A string dispatches the downstream
-``test-python*`` workflows on that ref, which is how a branch with no pull
-request is re-tested. The object form re-runs the workflow runs on that pull
-request's head commit, and with ``evergreen`` also comments ``evergreen retry``
-to re-trigger its Evergreen patch.
+A list may name several, mixing the two.
 
 Best-effort: a stale PR number or an API error is reported and skipped rather
 than failing the run, so one bad mapping entry cannot mask the branches that

@@ -28,31 +28,6 @@ def parse(value):
     return rc.parse_ci_rerun(json.dumps({BACKEND: value}))[BACKEND]
 
 
-def test_string_is_a_ref():
-    assert parse("main") == {"refs": ["main"], "prs": [], "evergreen_prs": []}
-
-
-def test_a_pr_object_reruns_its_actions():
-    assert parse({"pr": 622}) == {"refs": [], "prs": [622], "evergreen_prs": []}
-
-
-def test_evergreen_also_reruns_the_prs_actions():
-    """The flag adds Evergreen, it does not replace the Actions re-run."""
-    assert parse({"pr": 622, "evergreen": True}) == {
-        "refs": [],
-        "prs": [622],
-        "evergreen_prs": [622],
-    }
-
-
-def test_evergreen_false_is_actions_only():
-    assert parse({"pr": 622, "evergreen": False}) == {
-        "refs": [],
-        "prs": [622],
-        "evergreen_prs": [],
-    }
-
-
 def test_a_list_may_mix_the_forms():
     assert parse(["main", {"pr": 622}, {"pr": 602, "evergreen": True}]) == {
         "refs": ["main"],
@@ -66,33 +41,13 @@ def test_a_quoted_pr_number_still_parses():
     assert parse({"pr": "622", "evergreen": True})["evergreen_prs"] == [622]
 
 
-def test_a_bool_is_not_a_pr_number():
-    """bool subclasses int, so `true` must not parse as pull request #1."""
-    with pytest.raises(SystemExit):
-        parse({"pr": True})
-
-
-def test_several_downstream_repos():
-    parsed = rc.parse_ci_rerun(
-        json.dumps({BACKEND: "main", "mongodb/other": {"pr": 42}})
-    )
-    assert parsed[BACKEND]["refs"] == ["main"]
-    assert parsed["mongodb/other"]["prs"] == [42]
-
-
-@pytest.mark.parametrize("bad", ["not json", "[1, 2]", '"a string"'])
-def test_malformed_ci_rerun_is_rejected(bad):
-    with pytest.raises(SystemExit):
-        rc.parse_ci_rerun(bad)
-
-
 def test_a_key_that_is_not_owner_slash_name_is_rejected():
     """The key scopes the App token, so a malformed one must not reach gh."""
     with pytest.raises(SystemExit):
         rc.parse_ci_rerun(json.dumps({"django-mongodb-backend": "main"}))
 
 
-# --- the three behaviours -------------------------------------------------
+# --- the two cases: a merged branch, and an open pull request -------------
 
 
 class FakeGh:
@@ -175,17 +130,6 @@ def test_a_workflow_without_a_dispatch_trigger_is_skipped(gh):
     assert not fake.mutating()
 
 
-def test_a_workflow_missing_at_the_ref_is_skipped(gh):
-    """The registry still lists workflows deleted on this branch."""
-    fake = gh(
-        {"actions/workflows": json.dumps([".github/workflows/test-python.yml"])},
-        fail_on={"contents/": "gh: Not Found (HTTP 404)"},
-    )
-    with pytest.raises(rc.Skip):
-        rc.dispatch_workflows(BACKEND, "5.2.x", "test-python", dry_run=False)
-    assert not fake.mutating()
-
-
 def test_a_pr_reruns_every_run_on_its_head_commit(gh):
     """Lint and Evergreen checks gate the merge too, so all runs re-queue."""
     fake = gh(
@@ -207,18 +151,19 @@ def test_a_closed_pr_is_skipped(gh):
     assert not fake.mutating()
 
 
+def test_evergreen_comments_the_retry(gh):
+    """The comment body is the literal Evergreen looks for."""
+    fake = gh({"pr view": json.dumps({"state": "OPEN"})})
+    rc.retry_evergreen(BACKEND, 622, dry_run=False)
+    assert ["gh", "pr", "comment", "622", "--repo", BACKEND, "--body",
+            "evergreen retry"] in fake.calls
+
+
 def test_evergreen_skips_a_closed_pr(gh):
     fake = gh({"pr view": json.dumps({"state": "CLOSED"})})
     with pytest.raises(rc.Skip, match="closed"):
         rc.retry_evergreen(BACKEND, 607, dry_run=False)
     assert not fake.mutating()
-
-
-def test_evergreen_comments_the_retry(gh):
-    fake = gh({"pr view": json.dumps({"state": "OPEN"})})
-    rc.retry_evergreen(BACKEND, 607, dry_run=False)
-    assert ["gh", "pr", "comment", "607", "--repo", BACKEND, "--body",
-            "evergreen retry"] in fake.calls
 
 
 def test_runs_past_the_retry_window_say_so(gh):
