@@ -39,8 +39,7 @@ runs:
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.token }}
-        # Explicit, rather than inferred from the git remote, so the lookup
-        # cannot depend on how the caller configured its checkout.
+        # Explicit repo, so the lookup does not depend on the caller's checkout.
         GH_REPO: ${{ github.repository }}
         BRANCH: ${{ inputs.branch }}
         BASE: ${{ inputs.base }}
