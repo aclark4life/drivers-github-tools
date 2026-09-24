@@ -3,12 +3,7 @@
 # to the bot owned branch, push, and report the summary as step outputs.
 # action.yml passes those to $/open-or-update-pr.
 #
-# Sets two outputs: `changed`, which gates that step, and `body`, the pull
-# request body.
-#
-# Required environment: GH_TOKEN, BRANCH, DRY_RUN, OLD_CONFIG, CONFIG_PATH,
-# COOLDOWN_DAYS, ACTION_PATH, and GITHUB_OUTPUT plus GITHUB_REPOSITORY from the
-# Actions runtime.
+# Sets two outputs: `changed`, which gates that step, and `body`.
 set -euo pipefail
 
 # Write a step output that may span lines. A random delimiter stops a value

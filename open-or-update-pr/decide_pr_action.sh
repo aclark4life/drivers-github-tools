@@ -1,10 +1,5 @@
 #!/usr/bin/env bash
-# Open a new PR, or refresh the one already open on $BRANCH. A merged or
-# closed PR is not "open", so this falls through to creating a fresh one, with
-# no extra state to track.
-#
-# Required environment: BRANCH, BASE, TITLE, BODY, LABELS, DRY_RUN, and
-# GH_TOKEN plus GH_REPO for gh itself.
+# Open a new PR, or refresh the one already open on $BRANCH.
 set -euo pipefail
 
 # No --base filter: a reviewer may retarget the open PR, and this must still

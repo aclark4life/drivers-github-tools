@@ -56,7 +56,6 @@ export PATH="$TMPDIR:$PATH"
 run_script() {
   local pr_list_json="$1"
   local dry_run="$2"
-  # Labels default to a real value, so only the empty-label cases below opt out.
   local labels="${3-dependencies}"
   echo "$pr_list_json" > "$TMPDIR/pr_list_response.json"
   : > "$TMPDIR/gh_calls.log"
