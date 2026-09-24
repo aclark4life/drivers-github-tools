@@ -27,6 +27,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -71,7 +72,8 @@ def gh_error(exc: subprocess.CalledProcessError) -> str:
         line = line.strip()
         if line.startswith("gh: "):
             return line[4:].strip()
-    return (exc.stderr or "").strip().splitlines()[-1].strip() if exc.stderr else ""
+    lines = (exc.stderr or "").strip().splitlines()
+    return lines[-1].strip() if lines else ""
 
 
 def parse_ci_rerun(raw: str) -> dict[str, dict]:
@@ -101,6 +103,11 @@ def parse_ci_rerun(raw: str) -> dict[str, dict]:
             # bool is an int subclass, so exclude it before the int check or
             # `true` would parse as PR #1.
             if isinstance(item, str):
+                if item.isdigit():
+                    raise SystemExit(
+                        f"::error::ci_rerun: a pull request must be written "
+                        f'{{"pr": {item}}}, not {item!r}, which reads as a git ref'
+                    )
                 refs.append(item)
             elif isinstance(item, dict):
                 pr = item.get("pr")
@@ -117,7 +124,21 @@ def parse_ci_rerun(raw: str) -> dict[str, dict]:
                 prs.append(pr)
                 if item.get("evergreen"):
                     evergreen_prs.append(pr)
-        result[target] = {"refs": refs, "prs": prs, "evergreen_prs": evergreen_prs}
+            else:
+                # Neither a ref nor a pull request object. Failing here beats
+                # exiting clean, which would report success while the
+                # downstream stayed untested.
+                raise SystemExit(
+                    f"::error::ci_rerun: {item!r} is not a git ref or a "
+                    '{"pr": N} object'
+                )
+        # De-duplicate: a mapping naming the same ref or pull request twice
+        # would otherwise dispatch twice and post two identical comments.
+        result[target] = {
+            "refs": list(dict.fromkeys(refs)),
+            "prs": list(dict.fromkeys(prs)),
+            "evergreen_prs": list(dict.fromkeys(evergreen_prs)),
+        }
     return result
 
 
@@ -203,8 +224,11 @@ def retry_evergreen(target: str, number: int, dry_run: bool) -> None:
     """
     print(f"Retrying Evergreen on {target}#{number}")
     state = pr_state(target, number)
-    if state and state != "OPEN":
-        raise Skip(f"{target}#{number} is {state.lower()}; update the ci_rerun mapping")
+    if state != "OPEN":
+        # Unknown state included: a comment on a closed pull request is noise
+        # nobody sees, so a failed lookup skips rather than guessing it is open.
+        detail = state.lower() if state else "of unknown state"
+        raise Skip(f"{target}#{number} is {detail}; update the ci_rerun mapping")
     try:
         run_gh(
             ["pr", "comment", str(number), "--repo", target, "--body", "evergreen retry"],
@@ -228,7 +252,8 @@ def dispatch_workflows(target: str, ref: str, pattern: str, dry_run: bool) -> No
                 "api",
                 f"repos/{target}/actions/workflows",
                 "--jq",
-                f'[.workflows[] | select(.path | test("workflows/{pattern}")) | .path]',
+                f"[.workflows[] | select(.path | "
+                f'test("workflows/{re.escape(pattern)}")) | .path]',
             ]
         )
     except (subprocess.CalledProcessError, json.JSONDecodeError) as exc:

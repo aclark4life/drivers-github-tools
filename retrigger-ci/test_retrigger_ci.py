@@ -274,3 +274,55 @@ def test_a_dry_run_makes_no_mutating_call(gh, monkeypatch, capsys):
     assert rc.main() == 0
     assert not fake.mutating()
     assert "Would run: gh workflow run" in capsys.readouterr().out
+
+
+# --- regressions ----------------------------------------------------------
+
+
+def test_a_bare_number_is_rejected_not_read_as_a_ref():
+    """It would otherwise dispatch on a branch named '622'."""
+    with pytest.raises(SystemExit, match="not '622'"):
+        parse("622")
+
+
+def test_a_value_that_is_neither_a_ref_nor_a_pr_is_rejected():
+    """Exiting clean here would report success on an untested downstream."""
+    with pytest.raises(SystemExit):
+        parse(622)
+    with pytest.raises(SystemExit):
+        parse(None)
+
+
+def test_duplicates_act_once():
+    """Two dispatches race, and two Evergreen comments are noise."""
+    assert parse(["main", "main"])["refs"] == ["main"]
+    ever = parse([{"pr": 622, "evergreen": True}, {"pr": 622, "evergreen": True}])
+    assert ever["prs"] == [622]
+    assert ever["evergreen_prs"] == [622]
+
+
+def test_whitespace_only_stderr_does_not_crash():
+    """An IndexError here escapes Skip and aborts the whole best-effort run."""
+    exc = subprocess.CalledProcessError(1, ["gh"], stderr="   ")
+    assert rc.gh_error(exc) == ""
+
+
+def test_evergreen_skips_when_the_state_lookup_fails(gh):
+    """A failed lookup must not be read as 'open' and land a stray comment."""
+    fake = gh(fail_on={"pr view": "gh: API rate limit exceeded (HTTP 403)"})
+    with pytest.raises(rc.Skip, match="unknown state"):
+        rc.retry_evergreen(BACKEND, 622, dry_run=False)
+    assert not fake.mutating()
+
+
+def test_a_pattern_with_a_dot_is_matched_literally(gh):
+    """Unescaped, '.' matches any character and widens the scope."""
+    fake = gh(
+        {
+            "actions/workflows": json.dumps([".github/workflows/test-python.yml"]),
+            "contents/": b64("on:\n  workflow_dispatch:\n"),
+        }
+    )
+    rc.dispatch_workflows(BACKEND, "main", "test-python.yml", dry_run=False)
+    listed = [c for c in fake.calls if "actions/workflows" in " ".join(c)][0]
+    assert "test\\-python\\.yml" in " ".join(listed) or "test\\-python\\.yml" in str(listed)
