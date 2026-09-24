@@ -6,15 +6,12 @@ PR_NUMBER=$(gh pr list --head "$BRANCH" --state open --json number,isCrossReposi
 
 if [ "$DRY_RUN" = "true" ]; then
   # `gh pr create --dry-run` documents that it "may still push git changes",
-  # so a dry run reports the decision and reaches no mutating command. The
-  # listing above is read only.
+  # so the dry run is hand-rolled here instead.
   if [ -n "$PR_NUMBER" ]; then
     echo "Would update PR #$PR_NUMBER on $BRANCH"
   else
     echo "Would create PR \"$TITLE\" from $BRANCH into $BASE"
   fi
-  # Log the body too, so a dry run verifies the summary, not just the
-  # create-or-update decision.
   echo "::group::Pull request body"
   echo "$BODY"
   echo "::endgroup::"
