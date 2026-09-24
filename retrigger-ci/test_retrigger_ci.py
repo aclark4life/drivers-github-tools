@@ -20,9 +20,8 @@ BACKEND = "mongodb/django-mongodb-backend"
 
 
 # --- the ci_rerun mapping -------------------------------------------------
-# The value's type selects the behaviour, so these cover the shapes that
-# appear in the existing sync config. A mapping must parse there and here
-# identically, or copying one across silently re-triggers the wrong thing.
+# The value's type selects the behaviour. A mapping must parse the same here
+# as in the sync config, or copying one across re-triggers the wrong thing.
 
 
 def parse(value):
@@ -164,7 +163,7 @@ def test_a_ref_dispatches_each_matching_workflow(gh):
 
 
 def test_a_workflow_without_a_dispatch_trigger_is_skipped(gh):
-    """Dispatching one would 422, so it is inspected rather than assumed."""
+    """Dispatching one would 422, so each definition is inspected."""
     fake = gh(
         {
             "actions/workflows": json.dumps([".github/workflows/test-python.yml"]),
@@ -177,7 +176,7 @@ def test_a_workflow_without_a_dispatch_trigger_is_skipped(gh):
 
 
 def test_a_workflow_missing_at_the_ref_is_skipped(gh):
-    """The Actions registry still lists workflows deleted on this branch."""
+    """The registry still lists workflows deleted on this branch."""
     fake = gh(
         {"actions/workflows": json.dumps([".github/workflows/test-python.yml"])},
         fail_on={"contents/": "gh: Not Found (HTTP 404)"},
@@ -188,7 +187,7 @@ def test_a_workflow_missing_at_the_ref_is_skipped(gh):
 
 
 def test_a_pr_reruns_every_run_on_its_head_commit(gh):
-    """Not just the test workflows: lint and Evergreen checks gate the merge."""
+    """Lint and Evergreen checks gate the merge too, so all runs re-queue."""
     fake = gh(
         {
             "pr view": json.dumps({"state": "OPEN", "headRefOid": "abc123"}),
@@ -201,7 +200,7 @@ def test_a_pr_reruns_every_run_on_its_head_commit(gh):
 
 
 def test_a_closed_pr_is_skipped(gh):
-    """A stale mapping is a config bug worth surfacing, not acting on."""
+    """A stale mapping is a config bug to surface, not act on."""
     fake = gh({"pr view": json.dumps({"state": "MERGED", "headRefOid": "abc123"})})
     with pytest.raises(rc.Skip, match="merged"):
         rc.rerun_pr(BACKEND, 607, dry_run=False)
@@ -223,7 +222,7 @@ def test_evergreen_comments_the_retry(gh):
 
 
 def test_runs_past_the_retry_window_say_so(gh):
-    """The refusal is otherwise indistinguishable from a permissions problem."""
+    """The refusal otherwise looks like a permissions problem."""
     fake = gh(
         {
             "pr view": json.dumps({"state": "OPEN", "headRefOid": "abc123"}),
@@ -286,7 +285,7 @@ def test_a_bare_number_is_rejected_not_read_as_a_ref():
 
 
 def test_a_value_that_is_neither_a_ref_nor_a_pr_is_rejected():
-    """Exiting clean here would report success on an untested downstream."""
+    """Exiting clean would report success on an untested downstream."""
     with pytest.raises(SystemExit):
         parse(622)
     with pytest.raises(SystemExit):
@@ -302,13 +301,13 @@ def test_duplicates_act_once():
 
 
 def test_whitespace_only_stderr_does_not_crash():
-    """An IndexError here escapes Skip and aborts the whole best-effort run."""
+    """An IndexError escapes Skip and aborts the whole run."""
     exc = subprocess.CalledProcessError(1, ["gh"], stderr="   ")
     assert rc.gh_error(exc) == ""
 
 
 def test_evergreen_skips_when_the_state_lookup_fails(gh):
-    """A failed lookup must not be read as 'open' and land a stray comment."""
+    """A failed lookup must not read as 'open' and land a stray comment."""
     fake = gh(fail_on={"pr view": "gh: API rate limit exceeded (HTTP 403)"})
     with pytest.raises(rc.Skip, match="unknown state"):
         rc.retry_evergreen(BACKEND, 622, dry_run=False)

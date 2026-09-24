@@ -31,9 +31,8 @@ import re
 import subprocess
 import sys
 
-# GitHub refuses to re-run a workflow run older than this, so a PR whose runs
-# have aged out needs a fresh push instead. Worth naming in the output: the
-# refusal is otherwise indistinguishable from a permissions problem.
+# GitHub refuses to re-run a run older than this. Worth naming: the refusal
+# otherwise looks like a permissions problem.
 RETRY_WINDOW_HINT = "over a month ago"
 
 
@@ -100,8 +99,6 @@ def parse_ci_rerun(raw: str) -> dict[str, dict]:
         prs: list[int] = []
         evergreen_prs: list[int] = []
         for item in value if isinstance(value, list) else [value]:
-            # bool is an int subclass, so exclude it before the int check or
-            # `true` would parse as PR #1.
             if isinstance(item, str):
                 if item.isdigit():
                     raise SystemExit(
@@ -113,7 +110,7 @@ def parse_ci_rerun(raw: str) -> dict[str, dict]:
                 pr = item.get("pr")
                 # A matrix value reaches us through YAML, so a number may
                 # arrive quoted. bool subclasses int, so exclude it or `true`
-                # would parse as pull request #1.
+                # parses as pull request #1.
                 if isinstance(pr, str) and pr.isdigit():
                     pr = int(pr)
                 if isinstance(pr, bool) or not isinstance(pr, int):
@@ -125,15 +122,14 @@ def parse_ci_rerun(raw: str) -> dict[str, dict]:
                 if item.get("evergreen"):
                     evergreen_prs.append(pr)
             else:
-                # Neither a ref nor a pull request object. Failing here beats
-                # exiting clean, which would report success while the
-                # downstream stayed untested.
+                # Failing beats exiting clean, which would report success on
+                # an untested downstream.
                 raise SystemExit(
                     f"::error::ci_rerun: {item!r} is not a git ref or a "
                     '{"pr": N} object'
                 )
-        # De-duplicate: a mapping naming the same ref or pull request twice
-        # would otherwise dispatch twice and post two identical comments.
+        # A repeated entry would otherwise dispatch twice and post two
+        # identical comments.
         result[target] = {
             "refs": list(dict.fromkeys(refs)),
             "prs": list(dict.fromkeys(prs)),
@@ -143,11 +139,7 @@ def parse_ci_rerun(raw: str) -> dict[str, dict]:
 
 
 def pr_state(target: str, number: int) -> str | None:
-    """Return OPEN/CLOSED/MERGED, or None if the lookup failed.
-
-    A failed lookup returns None so the caller proceeds rather than skipping
-    real work over a transient API error.
-    """
+    """Return OPEN/CLOSED/MERGED, or None if the lookup failed."""
     try:
         pr = gh_json(["pr", "view", str(number), "--repo", target, "--json", "state"])
     except (subprocess.CalledProcessError, json.JSONDecodeError):
@@ -158,9 +150,8 @@ def pr_state(target: str, number: int) -> str | None:
 def rerun_pr(target: str, number: int, dry_run: bool) -> None:
     """Re-queue every workflow run on an open PR's head commit.
 
-    Every run, not just the test workflows: on a PR the lint and Evergreen
-    checks gate the merge too, so all of them need re-validating against the
-    rebased fork branch.
+    Every run, not just the test workflows: the lint and Evergreen checks gate
+    the merge too, so all of them need re-validating.
     """
     print(f"Re-running CI on {target}#{number}")
     try:
@@ -218,15 +209,14 @@ def rerun_pr(target: str, number: int, dry_run: bool) -> None:
 def retry_evergreen(target: str, number: int, dry_run: bool) -> None:
     """Comment ``evergreen retry`` so Evergreen starts a fresh patch.
 
-    Evergreen pins the fork ref just as Actions does, so a rebase does not
-    re-run it. A closed or merged PR is skipped: Evergreen runs no patch for
-    one, so the comment would be noise.
+    Evergreen pins the fork ref as Actions does, so a rebase does not re-run
+    it. A closed or merged PR is skipped: Evergreen runs no patch for one.
     """
     print(f"Retrying Evergreen on {target}#{number}")
     state = pr_state(target, number)
     if state != "OPEN":
-        # Unknown state included: a comment on a closed pull request is noise
-        # nobody sees, so a failed lookup skips rather than guessing it is open.
+        # Unknown included: a failed lookup skips rather than guessing open,
+        # since a comment on a closed pull request is noise nobody sees.
         detail = state.lower() if state else "of unknown state"
         raise Skip(f"{target}#{number} is {detail}; update the ci_rerun mapping")
     try:
@@ -242,8 +232,8 @@ def retry_evergreen(target: str, number: int, dry_run: bool) -> None:
 def dispatch_workflows(target: str, ref: str, pattern: str, dry_run: bool) -> None:
     """Dispatch the downstream test workflows on a branch or tag.
 
-    No PR is needed: workflow_dispatch runs each workflow's definition as it
-    exists on ``ref``, which pins the fork branch that definition checks out.
+    No PR is needed: workflow_dispatch runs each definition as it exists on
+    ``ref``, which pins the fork branch that definition checks out.
     """
     print(f"Dispatching CI on {target}@{ref}")
     try:
@@ -263,7 +253,7 @@ def dispatch_workflows(target: str, ref: str, pattern: str, dry_run: bool) -> No
         raise Skip(f"no {pattern}* workflows found in {target}")
 
     # Only a workflow declaring workflow_dispatch can run on a ref; the rest
-    # would 422. Inspect each definition at `ref` rather than guessing.
+    # would 422. Inspect each definition at `ref`.
     dispatchable = []
     for path in sorted(workflows):
         name = path.split("/")[-1]
@@ -277,13 +267,13 @@ def dispatch_workflows(target: str, ref: str, pattern: str, dry_run: bool) -> No
                 print(f"  {name}: skipped, no workflow_dispatch trigger")
         except subprocess.CalledProcessError as exc:
             stderr = exc.stderr or ""
-            # A 404 means the Actions registry still lists a workflow that no
-            # longer exists at this ref. Dispatching it would 422.
+            # The Actions registry still lists workflows deleted at this
+            # ref. Dispatching one would 422.
             if "404" in stderr or "Not Found" in stderr:
                 print(f"  {name}: skipped, not present on {ref}")
                 continue
-            # Any other error is transient, so attempt the dispatch anyway
-            # rather than skipping work over a failed inspection.
+            # Any other error is transient, so attempt the dispatch rather
+            # than skip work over a failed inspection.
             dispatchable.append(path)
 
     if not dispatchable:
@@ -309,7 +299,6 @@ def main() -> int:
 
     targets = parse_ci_rerun(raw)
 
-    # De-duplicate so a mapping that names the same PR or ref twice acts once.
     actions: list[tuple] = []
     for target, spec in targets.items():
         for ref in spec["refs"]:
@@ -323,8 +312,8 @@ def main() -> int:
         print("ci_rerun named no targets, nothing to re-trigger.")
         return 0
 
-    # Best-effort: one stale mapping entry must not stop the rest.
-    # Failures are warnings so the run stays green but says what was skipped.
+    # Best-effort: one stale entry must not stop the rest. Failures warn, so
+    # the run stays green and still says what was skipped.
     for func, *args in actions:
         try:
             func(*args, dry_run)
