@@ -428,6 +428,48 @@ jobs:
           token: ${{ github.token }}
 ```
 
+### Re-trigger Downstream CI
+
+Use this action when a repository changes something a *different* repository
+depends on, and nothing would otherwise tell the downstream repository to
+re-test. The motivating case is a fork branch that a downstream repository
+checks out by ref: force-pushing the branch changes what the downstream builds
+against, but its CI has no reason to run again.
+
+The action mints a downstream-scoped GitHub App token itself, so the caller
+passes only `app_id` and `private_key` and never handles a raw cross-repository
+token. The App must be installed on the downstream repository.
+
+How to re-trigger is given by `ci_rerun`, a JSON object with a `kind`:
+
+| `ci_rerun` | Effect | App permissions |
+| --- | --- | --- |
+| `{"kind":"evergreen","pr":422}` | Post an Evergreen retry comment on pull request 422, so Evergreen re-runs its patch. Fails if the pull request is not open, because Evergreen ignores the comment otherwise. | `pull-requests: write` |
+| `{"kind":"pr","pr":422}` | Re-queue the completed matching GitHub Actions runs on pull request 422's head commit. | `pull-requests: read`, `actions: write` |
+| `{"kind":"ref","ref":"main"}` | Dispatch the matching workflows on a branch or tag. Those workflows need a `workflow_dispatch` trigger. | `actions: write` |
+
+The `pr` and `ref` kinds act only on workflows whose file name matches
+`workflow_pattern` (default `test-python*`). Keep this scoped: an unscoped
+pattern would re-queue release workflows too.
+
+Anything that would leave the downstream repository untested is an error, not a
+silent skip: an unknown `kind`, a `kind` missing the field it acts on, a closed
+pull request, a commit SHA where a dispatchable ref is required, or a pattern
+that matches no workflow.
+
+```yaml
+- name: Re-trigger backend CI
+  uses: mongodb-labs/drivers-github-tools/retrigger-ci@v3
+  with:
+    repo: mongodb/django-mongodb-backend
+    ci_rerun: '{"kind":"ref","ref":"main"}'
+    app_id: ${{ vars.APP_ID }}
+    private_key: ${{ secrets.APP_PRIVATE_KEY }}
+```
+
+Set `dry_run: true` to log the calls the action would make without making any
+of them.
+
 ## Python Actions
 
 Python helper actions have their own READMEs:

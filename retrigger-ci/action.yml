@@ -1,0 +1,80 @@
+name: Re-trigger Downstream CI
+description: >-
+  Re-run a downstream repository's CI after this repository changed something it
+  depends on, such as a force-pushed branch it checks out by ref.
+inputs:
+  repo:
+    description: The downstream repository to re-trigger, as owner/name
+    required: true
+  ci_rerun:
+    description: >-
+      JSON object describing how to re-trigger, {"kind": ...}. Three kinds are
+      supported: {"kind":"evergreen","pr":N} posts an Evergreen retry comment on
+      pull request N; {"kind":"pr","pr":N} re-queues the matching GitHub Actions
+      runs on pull request N's head commit; {"kind":"ref","ref":"branch"}
+      dispatches the matching workflows on a branch or tag.
+    required: true
+  app_id:
+    description: >-
+      ID of a GitHub App installed on the downstream repository. The action
+      mints the downstream-scoped token itself, so callers never handle a raw
+      cross-repository token.
+    required: true
+  private_key:
+    description: The private key of the GitHub App
+    required: true
+  workflow_pattern:
+    description: >-
+      Glob matched against workflow file names to decide which workflows the
+      'pr' and 'ref' kinds act on. Scoping this matters: without it, the 'pr'
+      kind would re-queue every run on the commit, including release workflows.
+    default: test-python*
+  evergreen_comment:
+    description: The comment body that nudges Evergreen to re-run its patch
+    default: evergreen retry
+  dry_run:
+    description: If 'true', report intended actions without re-triggering anything
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    # Validate and split before minting anything, so a malformed repo or a typo
+    # in the ci_rerun kind fails without a token ever being issued.
+    - name: Parse the inputs
+      id: parse
+      shell: bash
+      env:
+        REPO: ${{ inputs.repo }}
+        CI_RERUN: ${{ inputs.ci_rerun }}
+      run: ${{ github.action_path }}/parse_inputs.sh
+
+    # Scoped to the downstream repository, and to only the permissions the
+    # chosen kind needs. An empty value is not requested at all.
+    - name: Generate a downstream-scoped app token
+      id: app-token
+      uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+      with:
+        app-id: ${{ inputs.app_id }}
+        private-key: ${{ inputs.private_key }}
+        owner: ${{ steps.parse.outputs.owner }}
+        repositories: ${{ steps.parse.outputs.name }}
+        permission-pull-requests: ${{ steps.parse.outputs.kind == 'evergreen' && 'write' || steps.parse.outputs.kind == 'pr' && 'read' || '' }}
+        permission-actions: ${{ steps.parse.outputs.kind != 'evergreen' && 'write' || '' }}
+      env:
+        FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+    - name: Re-trigger ${{ inputs.repo }}
+      shell: bash
+      env:
+        GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        # Target the repository explicitly rather than letting gh infer it from
+        # the git remote, so this works with no checkout at all.
+        GH_REPO: ${{ inputs.repo }}
+        KIND: ${{ steps.parse.outputs.kind }}
+        PR: ${{ steps.parse.outputs.pr }}
+        REF: ${{ steps.parse.outputs.ref }}
+        WORKFLOW_PATTERN: ${{ inputs.workflow_pattern }}
+        EVERGREEN_COMMENT: ${{ inputs.evergreen_comment }}
+        DRY_RUN: ${{ inputs.dry_run }}
+      run: ${{ github.action_path }}/retrigger.sh
