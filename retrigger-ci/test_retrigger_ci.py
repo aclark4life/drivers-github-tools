@@ -21,8 +21,8 @@ BACKEND = "mongodb/django-mongodb-backend"
 
 # --- the ci_rerun mapping -------------------------------------------------
 # The value's type selects the behaviour, so these cover the shapes that
-# appear in dbx's config. A mapping must parse there and here identically, or
-# copying one across silently re-triggers the wrong thing.
+# appear in the existing sync config. A mapping must parse there and here
+# identically, or copying one across silently re-triggers the wrong thing.
 
 
 def parse(value):
@@ -237,7 +237,7 @@ def test_runs_past_the_retry_window_say_so(gh):
 
 
 def test_one_bad_target_does_not_stop_the_others(gh, monkeypatch, capsys):
-    """Best-effort, like dbx: a stale entry must not mask a branch that synced."""
+    """Best-effort: a stale entry must not mask a branch that synced."""
     fake = gh(
         {
             "pr view": json.dumps({"state": "MERGED"}),

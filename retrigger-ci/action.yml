@@ -1,13 +1,12 @@
 name: Re-trigger Downstream CI
 description: >-
   Re-run a downstream repository's CI after a branch it checks out by ref was
-  force-pushed. Ports `dbx sync --all-branches` to GitHub Actions.
+  force-pushed.
 inputs:
   ci_rerun:
     description: >-
-      JSON object mapping each downstream owner/name to how its CI re-runs, in
-      the same shape as dbx's ci_rerun config so a mapping copies across
-      unchanged. A string dispatches the downstream test workflows on that ref.
+      JSON object mapping each downstream owner/name to how its CI re-runs.
+      A string dispatches the downstream test workflows on that ref.
       An integer re-runs the workflow runs on that PR. {"pr": N, "evergreen":
       true} does the PR re-run and also comments 'evergreen retry'. A list may
       mix the forms. Empty re-triggers nothing.

@@ -434,9 +434,6 @@ Use this action when a repository force-pushes a branch that a *different*
 repository checks out by ref. The downstream CI pins the branch at a ref, so a
 rebase changes what it builds against without re-triggering anything.
 
-This ports `dbx sync --all-branches` to GitHub Actions and takes that command's
-`ci_rerun` config shape unchanged, so a mapping copies across verbatim.
-
 `ci_rerun` maps each downstream `owner/name` to a target, where the value's
 type selects the behaviour:
 
@@ -449,16 +446,17 @@ type selects the behaviour:
 
 The object form is additive: the PR still gets its Actions runs re-queued, and
 the flag adds Evergreen on top. Evergreen pins the fork ref just as Actions
-does, so a rebase does not re-run it either.
+does, so a rebase does not re-run it either. The shape matches the mapping the
+existing sync tooling uses, so one copies across verbatim.
 
 The action mints the downstream-scoped App token itself, so the caller passes
 only `app_id` and `private_key`. The App must be installed on every downstream
 repository named in the mapping. Set `owner` when the downstream repository
 has a different owner than the calling repository.
 
-Re-triggering is best-effort, matching `dbx`: a stale PR number, a closed pull
-request, or an API error is reported as a warning and skipped, so one bad entry
-cannot mask the branches that re-triggered correctly.
+Re-triggering is best-effort: a stale PR number, a closed pull request, or an
+API error is reported as a warning and skipped, so one bad entry cannot mask
+the branches that re-triggered correctly.
 
 ```yaml
 - name: Re-trigger backend CI

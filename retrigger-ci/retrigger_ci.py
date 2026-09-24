@@ -4,8 +4,8 @@ The downstream CI checks out the fork branch at a pinned ``ref:``, so a rebased
 branch does not re-trigger it. This reads a ``ci_rerun`` mapping naming, per
 fork branch, the downstream repositories and how to re-run each one.
 
-Ported from ``dbx sync --all-branches``, and deliberately accepts that command's
-config shape unchanged so a mapping can be copied across verbatim:
+The mapping shape matches the one the sync tooling already uses, so a mapping
+can be copied across verbatim:
 
     {"mongodb/django-mongodb-backend": "main"}                      # a git ref
     {"mongodb/django-mongodb-backend": 607}                         # a PR number
@@ -17,9 +17,9 @@ The value's *type* selects the behaviour: a string dispatches the downstream
 that PR's head commit, and the object form does the PR re-run *and* comments
 ``evergreen retry`` to re-trigger the PR's Evergreen patch.
 
-Best-effort, like dbx: a stale PR number or an API error is reported and
-skipped rather than failing the run, so one bad mapping entry cannot mask the
-branches that synced correctly.
+Best-effort: a stale PR number or an API error is reported and skipped rather
+than failing the run, so one bad mapping entry cannot mask the branches that
+synced correctly.
 """
 
 from __future__ import annotations
@@ -77,7 +77,7 @@ def gh_error(exc: subprocess.CalledProcessError) -> str:
 def parse_ci_rerun(raw: str) -> dict[str, dict]:
     """Split the mapping into per-target lists of refs, PRs, and Evergreen PRs.
 
-    Mirrors dbx's ``get_ci_rerun_targets``. Returns ``owner/name`` ->
+    Returns ``owner/name`` ->
     ``{"refs": [...], "prs": [...], "evergreen_prs": [...]}``, where
     ``evergreen_prs`` is the subset of ``prs`` that also want a retry comment.
     """
@@ -105,9 +105,9 @@ def parse_ci_rerun(raw: str) -> dict[str, dict]:
             if isinstance(item, int):
                 prs.append(item)
             elif isinstance(item, str):
-                # Unlike dbx's TOML, a matrix value reaches us through YAML, so
-                # a PR number may arrive quoted. Treat a digit-only string as a
-                # PR rather than a ref, which no branch name would look like.
+                # A matrix value reaches us through YAML, so a PR number may
+                # arrive quoted. Treat a digit-only string as a PR rather than
+                # a ref, which no branch name would look like.
                 (prs if item.isdigit() else refs).append(
                     int(item) if item.isdigit() else item
                 )
@@ -303,7 +303,7 @@ def main() -> int:
         print("ci_rerun named no targets, nothing to re-trigger.")
         return 0
 
-    # Best-effort, like dbx: one stale mapping entry must not stop the rest.
+    # Best-effort: one stale mapping entry must not stop the rest.
     # Failures are warnings so the run stays green but says what was skipped.
     for func, *args in actions:
         try:
