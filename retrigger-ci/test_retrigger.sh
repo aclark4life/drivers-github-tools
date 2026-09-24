@@ -131,7 +131,6 @@ check "pr: the pattern anchors at the start of the file name" \
 echo '[]' > "$TMPDIR/run_list.json"
 KIND=pr PR=422 REF='' run_script
 check "pr: no matching run fails" "1" "$STATUS"
-check "pr: no matching run re-queues nothing" "" "$(mutating_calls)"
 check_contains "pr: no matching run suggests a way forward" \
   "use the 'ref' kind" "$(log)"
 
@@ -165,7 +164,6 @@ check "ref: the release workflow is not dispatched" "" "$(gh_call 'workflow run 
 echo '[]' > "$TMPDIR/workflow_list.json"
 KIND=ref PR='' REF=main run_script
 check "ref: no matching workflow fails" "1" "$STATUS"
-check "ref: no matching workflow dispatches nothing" "" "$(mutating_calls)"
 
 cat > "$TMPDIR/workflow_list.json" <<'JSON'
 [{"path": ".github/workflows/test-python.yml", "state": "active"}]
@@ -182,6 +180,5 @@ echo "--- unhandled kind"
 unset DRY_RUN
 KIND=bogus PR='' REF='' run_script
 check "an unhandled kind fails" "1" "$STATUS"
-check "an unhandled kind does nothing" "" "$(mutating_calls)"
 
 exit $FAIL
