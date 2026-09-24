@@ -63,6 +63,4 @@ runs:
         CI_RERUN: ${{ inputs.ci_rerun }}
         WORKFLOW_PATTERN: ${{ inputs.workflow_pattern }}
         DRY_RUN: ${{ inputs.dry_run }}
-      # Only the standard library, so no install step is needed. The runner
-      # images ship a Python new enough for the annotations used here.
       run: python3 ${{ github.action_path }}/retrigger_ci.py
