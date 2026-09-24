@@ -81,9 +81,8 @@ check "no open PR: a PR is created against the configured base" \
   "$(gh_call create)"
 check "no open PR: nothing is edited" "" "$(gh_call edit)"
 
-# A fork can open a pull request whose head branch has the same name, and gh
-# cannot filter that out for us. Editing it would rewrite a stranger's pull
-# request, so it must be ignored and a fresh one created instead.
+# A fork can open a pull request from a branch of the same name. Editing it
+# would rewrite a stranger's pull request.
 run_script '[{"number": 99, "isCrossRepository": true}]' "false"
 check "fork PR on the same branch name is ignored" "" "$(gh_call edit)"
 check "fork PR on the same branch name: ours is created instead" \

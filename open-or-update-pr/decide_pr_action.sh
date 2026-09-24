@@ -2,9 +2,6 @@
 # Open a new PR, or refresh the one already open on $BRANCH.
 set -euo pipefail
 
-# --head matches on branch name alone and gh has no --owner filter, so a fork
-# branch of the same name could match and we would edit a stranger's PR.
-# isCrossRepository excludes anything not from this repo.
 PR_NUMBER=$(gh pr list --head "$BRANCH" --state open --json number,isCrossRepository --jq 'map(select(.isCrossRepository == false)) | .[0].number // empty')
 
 if [ "$DRY_RUN" = "true" ]; then
