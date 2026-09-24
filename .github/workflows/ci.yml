@@ -75,7 +75,7 @@ jobs:
       - name: Run bump-major-version.sh tests
         run: bash .github/scripts/bump-major-version.test.sh
 
-  test-retrigger-ci:
+  retrigger-ci-tests:
     name: Re-trigger CI Tests
     runs-on: ubuntu-latest
 
