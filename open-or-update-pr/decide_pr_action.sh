@@ -2,10 +2,6 @@
 # Open a new PR, or refresh the one already open on $BRANCH.
 set -euo pipefail
 
-# No --base filter: a reviewer may retarget the open PR, and this must still
-# find it by head branch, or the next run creates a second PR from the same
-# branch. New PRs still target $BASE below.
-#
 # --head matches on branch name alone and gh has no --owner filter, so a fork
 # branch of the same name could match and we would edit a stranger's PR.
 # isCrossRepository excludes anything not from this repo.

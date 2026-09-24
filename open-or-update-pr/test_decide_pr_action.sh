@@ -71,8 +71,7 @@ run_script() {
 gh_call() { grep "^pr $1" "$TMPDIR/gh_calls.log" || true; }
 mutating_calls() { grep -E '^pr (create|edit)' "$TMPDIR/gh_calls.log" || true; }
 
-# No open PR: create one targeting BASE. The lookup must not filter on base, or
-# a PR a reviewer retargeted is missed and a second PR opens on the branch.
+# No open PR: create one targeting BASE.
 run_script '[]' "false"
 check "no open PR: list finds the branch by head and state alone" \
   "pr list --head uv-lock-update --state open --json number,isCrossRepository --jq map(select(.isCrossRepository == false)) | .[0].number // empty" \
