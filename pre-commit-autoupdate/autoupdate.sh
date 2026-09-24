@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Apply the cooldown to the updated config, summarize what is left, commit it
-# to the bot owned branch, push, and report the summary as step outputs.
-# action.yml passes those to $/open-or-update-pr.
+# Summarize the updated hook revisions, commit them to the bot owned branch,
+# push, and report the summary as step outputs. action.yml passes those to
+# $/open-or-update-pr.
 #
 # Sets two outputs: `changed`, which gates that step, and `body`.
 set -euo pipefail
@@ -27,36 +27,22 @@ no_changes() {
   exit 0
 }
 
-# Compare against the copy taken before the update, which is the same baseline
-# the summary is built from. `git diff` compares against HEAD, so an already
-# dirty workspace would disagree with the summary and could open a pull request
-# whose body reports no hook changes.
+# Compare against the copy taken before the update. `git diff` compares
+# against HEAD, so an already dirty workspace could open a pull request whose
+# body reports no hook changes.
 if cmp -s "$OLD_CONFIG" "$CONFIG_PATH"; then
   no_changes "No changes detected, skipping PR creation"
 fi
 
-# Reverts any rev still inside the cooldown, printing a bullet for each. Runs
-# before the summary so the pull request describes what it carries.
-HELD=$(python3 "$ACTION_PATH/apply_cooldown.py" "$OLD_CONFIG" "$CONFIG_PATH" "$COOLDOWN_DAYS")
-
-# The cooldown can revert every update, putting the config back where it
-# started. Re-checking keeps that from opening an empty pull request.
-if cmp -s "$OLD_CONFIG" "$CONFIG_PATH"; then
-  no_changes "Every update was held back by the cooldown, skipping PR creation"
-fi
-
-UPDATES=$(python3 "$ACTION_PATH/diff_config.py" "$OLD_CONFIG" "$CONFIG_PATH")
+# `prek update` rewrites only the rev lines, so a diff of those is the summary.
+# `diff` exits 1 when the files differ, which is the expected case here, so the
+# `|| true` keeps pipefail from ending the run.
+UPDATES=$({ diff "$OLD_CONFIG" "$CONFIG_PATH" || true; } | sed -n 's/^> *rev: *\(.*\)/- `\1`/p')
 
 if [ -n "$UPDATES" ]; then
   BODY="## Updated hooks"$'\n\n'"${UPDATES}"
 else
   BODY="No hook revision changes. The configuration changed; see the file diff for details."
-fi
-
-# Listing what was held tells a reviewer the run was not simply quiet, and names
-# what to expect next week.
-if [ -n "$HELD" ]; then
-  BODY="${BODY}"$'\n\n'"## Held back by the cooldown"$'\n\n'"${HELD}"
 fi
 
 # Everything below mutates state, so a dry run skips all of it and leaves the

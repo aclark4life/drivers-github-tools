@@ -432,12 +432,13 @@ jobs:
 
 ### Pre-commit Autoupdate
 
-Use this action to run `pre-commit autoupdate` on a schedule and open a pull
-request with the resulting hook revision changes. It maintains a single open
-pull request: a subsequent run updates the existing one rather than opening a
-second.
+Use this action to run `prek update` on a schedule and open a pull request with
+the resulting hook revision changes. It maintains a single open pull request: a
+subsequent run updates the existing one rather than opening a second.
 
-The caller checks out the repository and puts `pre-commit` on `PATH`.
+The caller checks out the repository and puts [`prek`](https://prek.j178.dev/)
+on `PATH`. `prek` is a drop-in replacement for `pre-commit` and is required:
+the cooldown below comes from `prek update --cooldown-days`.
 
 ```yaml
 name: Update pre-commit hooks
@@ -461,7 +462,7 @@ jobs:
         with:
           persist-credentials: false
       - uses: actions/setup-python@v7
-      - run: pipx install pre-commit
+      - run: pipx install prek
       - uses: mongodb-labs/drivers-github-tools/pre-commit-autoupdate@v3
         with:
           app_id: ${{ vars.APP_ID }}
@@ -480,13 +481,11 @@ GitHub rejects a pull request that asks for an unknown one.
 Set `dry_run: true` to log the branch and pull request the action would have
 created, without pushing or opening anything.
 
-A hook is only moved to a release that is at least `cooldown_days` old, so a
-broken or compromised release has time to be yanked before it lands in the
-config. A hook whose newest tag is younger than that keeps its current rev and
-is picked up by a later run; the pull request body lists what was held and why.
-`pre-commit` has no cooldown of its own, so the action applies it by reverting
-any rev whose tag is too new. Set `cooldown_days: 0` to adopt new releases
-immediately.
+`cooldown_days` is passed to `prek update --cooldown-days`. A hook is only
+moved to a release at least that old, so a broken or compromised one has time
+to be yanked before it lands. A hook whose newest tag is younger keeps its
+current rev and is picked up by a later run. Set `cooldown_days: 0` to adopt
+new releases immediately.
 
 ```yaml
       - uses: mongodb-labs/drivers-github-tools/pre-commit-autoupdate@v3
@@ -496,10 +495,6 @@ immediately.
           cooldown_days: 14
           config: .pre-commit-config.yaml
 ```
-
-A rev whose release date cannot be determined, such as one that is not a tag in
-the hook repository, is held back and logged as a warning rather than adopted
-unchecked.
 
 ### Open or Update Pull Request
 

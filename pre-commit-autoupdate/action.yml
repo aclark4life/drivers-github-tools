@@ -1,7 +1,7 @@
 name: Pre-commit Autoupdate
 description: >-
-  Runs `pre-commit autoupdate` behind a release cooldown and opens or refreshes a
-  single pull request with the hook revision changes
+  Runs `prek update` behind a release cooldown and opens or refreshes a single
+  pull request with the hook revision changes. Requires `prek` on PATH.
 
 inputs:
   app_id:
@@ -29,10 +29,10 @@ inputs:
     default: .pre-commit-config.yaml
   cooldown_days:
     description: >-
-      Minimum age, in days, of a hook release before it may be adopted. A repo
-      whose newest tag is younger than this keeps its current rev and is picked
-      up by a later run, so a broken or compromised release has time to be
-      yanked before it lands. Set to 0 to adopt the newest release immediately.
+      Passed to `prek update --cooldown-days`. A hook release younger than this
+      is not adopted, so a broken or compromised one has time to be yanked
+      before it lands. A later run picks it up once it ages past the cutoff.
+      Set to 0 to adopt the newest release immediately.
     default: "7"
 
 runs:
@@ -73,9 +73,10 @@ runs:
       shell: bash
       env:
         CONFIG_PATH: ${{ inputs.config }}
-      run: pre-commit autoupdate --config "$CONFIG_PATH"
+        COOLDOWN_DAYS: ${{ inputs.cooldown_days }}
+      run: prek update --config "$CONFIG_PATH" --cooldown-days "$COOLDOWN_DAYS"
 
-    - name: Apply the cooldown and summarize
+    - name: Summarize the update
       id: prepare
       shell: bash
       env:
@@ -87,12 +88,10 @@ runs:
         DRY_RUN: ${{ inputs.dry_run }}
         CONFIG_PATH: ${{ inputs.config }}
         OLD_CONFIG: ${{ runner.temp }}/pre-commit-config.before
-        COOLDOWN_DAYS: ${{ inputs.cooldown_days }}
-        ACTION_PATH: ${{ github.action_path }}
       run: ${{ github.action_path }}/autoupdate.sh
 
-    # Skipped when nothing changed, or the cooldown held everything back, so
-    # a run with nothing to adopt never touches an existing pull request.
+    # Skipped when nothing changed, so a quiet run never touches an existing
+    # pull request.
     - name: Create or update the pull request
       if: steps.prepare.outputs.changed == 'true'
       uses: $/open-or-update-pr
