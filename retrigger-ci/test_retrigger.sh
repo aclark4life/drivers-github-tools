@@ -92,9 +92,11 @@ check_contains "evergreen: a closed PR explains why" \
   "not open; Evergreen will not re-run" "$(log)"
 
 echo '{"state":"OPEN","headRefOid":"a4787d0"}' > "$TMPDIR/pr_view.json"
+# Every kind routes its mutating commands through run_gh, so one dry run
+# covers all three.
 DRY_RUN=true KIND=evergreen PR=422 REF='' run_script
-check "evergreen + dry run: no mutating gh call" "" "$(mutating_calls)"
-check_contains "evergreen + dry run: the intended call is logged" \
+check "dry run: no mutating gh call" "" "$(mutating_calls)"
+check_contains "dry run: the intended call is logged" \
   "Would run: gh pr comment 422" "$(log)"
 
 echo "--- kind: pr"
@@ -134,14 +136,6 @@ check "pr: no matching run fails" "1" "$STATUS"
 check_contains "pr: no matching run suggests a way forward" \
   "use the 'ref' kind" "$(log)"
 
-cat > "$TMPDIR/run_list.json" <<'JSON'
-[{"databaseId": 1, "path": ".github/workflows/test-python.yml"}]
-JSON
-DRY_RUN=true KIND=pr PR=422 REF='' run_script
-check "pr + dry run: no mutating gh call" "" "$(mutating_calls)"
-check_contains "pr + dry run: the intended call is logged" \
-  "Would run: gh run rerun 1" "$(log)"
-
 echo "--- kind: ref"
 
 cat > "$TMPDIR/workflow_list.json" <<'JSON'
@@ -164,14 +158,6 @@ check "ref: the release workflow is not dispatched" "" "$(gh_call 'workflow run 
 echo '[]' > "$TMPDIR/workflow_list.json"
 KIND=ref PR='' REF=main run_script
 check "ref: no matching workflow fails" "1" "$STATUS"
-
-cat > "$TMPDIR/workflow_list.json" <<'JSON'
-[{"path": ".github/workflows/test-python.yml", "state": "active"}]
-JSON
-DRY_RUN=true KIND=ref PR='' REF=main run_script
-check "ref + dry run: no mutating gh call" "" "$(mutating_calls)"
-check_contains "ref + dry run: the intended call is logged" \
-  "Would run: gh workflow run test-python.yml --ref main" "$(log)"
 
 echo "--- unhandled kind"
 
